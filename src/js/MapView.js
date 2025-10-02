@@ -10,7 +10,7 @@ class MapView {
     constructor(opts = {}) {
         this.container = opts.container;
         this.useMapLibre = opts.useMapLibre !== false;
-        this.initialCenter = opts.initialCenter || [-122.4194, 37.7749]; // Default to SF
+        this.initialCenter = opts.initialCenter || [36.8219, -1.2921]; // Default to Nairobi
         this.initialZoom = opts.initialZoom || 14;
         
         this.map = null;

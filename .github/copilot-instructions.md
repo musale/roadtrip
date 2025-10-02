@@ -2,12 +2,13 @@
 
 ## Project Overview
 
-RoadTrip is a mobile-first Progressive Web App (PWA) for GPS trip recording with live HUD overlay. The app provides real-time trip tracking, statistics visualization, and data export capabilities.
+RoadTrip is a mobile-first Progressive Web App (PWA) for GPS trip recording with live HUD overlay and real-time map visualization. The app provides seamless camera/map mode switching, real-time trip tracking, statistics visualization, and data export capabilities.
 
 ### Technology Stack
 
 - **Frontend**: Vanilla JavaScript (ES6 modules), CSS3, HTML5
-- **APIs**: Geolocation API, Canvas API, Web Storage API
+- **Maps**: MapLibre GL JS (via CDN) with canvas fallback
+- **APIs**: Geolocation API, Canvas API, Web Storage API, Wake Lock API
 - **Architecture**: Component-based modular design
 - **No external frameworks** - Pure web standards implementation
 
@@ -57,7 +58,48 @@ RoadTrip is a mobile-first Progressive Web App (PWA) for GPS trip recording with
 - `stop()` - Stop animation loop
 - `update(stats)` - Update displayed statistics
 
-### 3. Main App (`src/js/main.js`)
+### 3. MapView (`src/js/MapView.js`)
+
+**Purpose**: Real-time map visualization with live GPS track rendering
+
+**Key Features**:
+
+- MapLibre GL JS integration for vector maps
+- Canvas fallback for offline/low-bandwidth scenarios
+- Real-time GPS track visualization with polyline rendering
+- Live position marker with accuracy circles
+- Follow mode for auto-centering on current location
+- Fit-to-bounds functionality for entire trip visualization
+- High-DPI canvas support for sharp rendering
+- Touch-friendly map controls
+- Nairobi-centered default location (36.8219°E, -1.2921°S)
+
+**Key Methods**:
+
+- `init()` - Initialize MapLibre or canvas fallback
+- `updateLiveTrack(points)` - Update track with new GPS points
+- `setCurrentPoint(point)` - Update current position marker
+- `setFollow(enabled)` - Toggle automatic map centering
+- `fitBoundsToPoints(points)` - Fit map view to show entire trip
+- `destroy()` - Clean up map resources
+
+**MapLibre Integration**:
+
+- Vector map tiles from demotiles.maplibre.org
+- GeoJSON data sources for tracks and markers
+- Smooth animations with easeTo() transitions
+- Layered rendering: track line, current position, accuracy circle
+- Real-time coordinate updates at 10Hz max frequency
+
+**Canvas Fallback**:
+
+- Simple Web Mercator projection
+- Polyline track rendering with anti-aliasing
+- Current position marker with accuracy visualization
+- Coordinate display and zoom level indicators
+- Touch-friendly zoom and pan controls
+
+### 4. Main App (`src/js/main.js`)
 
 **Purpose**: Application orchestration and UI integration
 
@@ -65,9 +107,12 @@ RoadTrip is a mobile-first Progressive Web App (PWA) for GPS trip recording with
 
 - Component initialization and coordination
 - Event handling for UI controls
-- Camera/map mode switching
+- Camera/map mode switching without page reload
 - Recording state management
-- Integration between TripRecorder and LiveHUD
+- Integration between TripRecorder, LiveHUD, and MapView
+- Real-time data synchronization across components
+- Wake lock management for screen-on during recording
+- Accessibility support with ARIA live regions
 
 ## File Structure
 
@@ -80,7 +125,8 @@ roadtrip/
 │   └── js/
 │       ├── main.js             # App orchestration
 │       ├── TripRecorder.js     # GPS tracking & data
-│       └── LiveHUD.js          # Real-time display
+│       ├── LiveHUD.js          # Real-time display
+│       └── MapView.js          # Map visualization
 ├── playwright.config.js        # Testing configuration
 └── README.md                   # Project documentation
 ```
@@ -140,12 +186,26 @@ roadtrip/
 - Theme customization
 - Start/stop animation control
 
+### Map View Functionality ✅
+
+- MapLibre GL JS vector map integration
+- Real-time GPS track visualization with polyline rendering
+- Live position marker with accuracy circles
+- Camera/Map mode switching without page reload
+- Follow mode for auto-centering on current location
+- Fit-to-bounds functionality for entire trip visualization
+- Canvas fallback for offline scenarios
+- Touch-friendly map controls
+- Nairobi-centered default location
+
 ### Integration Testing ✅
 
 - Event-driven communication between components
-- Real-time data flow from GPS to HUD display
-- UI control integration
+- Real-time data flow from GPS to HUD and Map display
+- Mode switching between Camera and Map views
+- UI control integration (Mode toggle, Fit button)
 - Export functionality validation
+- Wake lock management during recording
 
 ## Common Patterns
 
@@ -183,6 +243,56 @@ const options = {
 navigator.geolocation.watchPosition(onSuccess, onError, options);
 ```
 
+### MapLibre GL Integration
+
+```javascript
+// Initialize MapLibre with Nairobi center
+this.map = new maplibregl.Map({
+  container: mapDiv,
+  style: "https://demotiles.maplibre.org/style.json",
+  center: [36.8219, -1.2921], // Nairobi coordinates
+  zoom: 14,
+  attributionControl: false,
+});
+
+// Add real-time track layer
+this.map.addSource("track", {
+  type: "geojson",
+  data: { type: "LineString", coordinates: [] },
+});
+
+this.map.addLayer({
+  id: "track-line",
+  type: "line",
+  source: "track",
+  paint: {
+    "line-color": "#00ff88",
+    "line-width": 4,
+    "line-opacity": 0.8,
+  },
+});
+```
+
+### Mode Switching Pattern
+
+```javascript
+// CSS-based mode switching without page reload
+async function setMode(mode) {
+  currentMode = mode;
+  elements.root.className = `mode-${mode}`;
+  elements.modeIndicator.textContent = mode === "camera" ? "Camera" : "Map";
+
+  if (mode === "map" && !mapView) {
+    await initializeMapView();
+    // Update map with current trip data
+    const currentTrip = tripRecorder.getCurrentTrip();
+    if (currentTrip && currentTrip.points.length > 0) {
+      mapView.updateLiveTrack(currentTrip.points);
+    }
+  }
+}
+```
+
 ## Debugging Tips
 
 ### Common Issues
@@ -191,6 +301,8 @@ navigator.geolocation.watchPosition(onSuccess, onError, options);
 2. **Geolocation**: Check browser permissions and HTTPS requirements
 3. **Canvas Rendering**: Verify device pixel ratio scaling
 4. **Performance**: Monitor requestAnimationFrame usage
+5. **MapLibre Loading**: Verify CDN connectivity and fallback to canvas
+6. **Mode Switching**: Ensure CSS classes are applied correctly for .mode-map/.mode-camera
 
 ### Development Server
 
@@ -205,11 +317,13 @@ cd src && python3 -m http.server 8080
 ### Potential Enhancements
 
 - Offline capability with Service Workers
-- Map integration (OpenStreetMap/Mapbox)
+- Advanced map layers and overlays
 - Trip comparison and analytics
 - Social sharing features
 - Advanced export formats (KML, TCX)
 - Real-time dashcam video recording
+- Custom map styles and themes
+- GPS track smoothing algorithms
 
 ### Architecture Considerations
 
@@ -226,12 +340,15 @@ cd src && python3 -m http.server 8080
 1. Grant location permissions in browser
 2. Start trip recording and move around
 3. Verify real-time HUD updates
-4. Test export functionality
-5. Check accessibility with screen reader
+4. Test Camera/Map mode switching
+5. Verify map rendering and real-time tracking
+6. Test Fit button functionality in map mode
+7. Test export functionality
+8. Check accessibility with screen reader
 
 ### Automated Testing
 
-Use Playwright for comprehensive browser automation testing of all features. The app has been fully tested with real GPS data capture and export validation.
+Use Playwright for comprehensive browser automation testing of all features. The app has been fully tested with real GPS data capture, map rendering, mode switching, and export validation.
 
 ## Browser Compatibility
 
