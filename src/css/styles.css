@@ -1,5 +1,5 @@
 /* ==========================================================================
-   TripRecorder - Mobile Responsive Styles
+   RoadTrip - Mobile-First Recording Interface
    ========================================================================== */
 
 /* CSS Reset and Base Styles */
@@ -9,45 +9,439 @@
     box-sizing: border-box;
 }
 
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    line-height: 1.6;
-    color: #333;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    min-height: 100vh;
-    padding: 20px;
+html, body {
+    height: 100%;
+    height: 100dvh; /* Dynamic viewport height for mobile */
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    -webkit-text-size-adjust: 100%;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
 }
 
-/* Main Content Area */
-.main-content {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 20px;
+/* ==========================================================================
+   Root Container - Fullscreen Recording Layout
+   ========================================================================== */
+
+#root {
+    position: relative;
+    height: 100dvh;
+    width: 100vw;
+    overflow: hidden;
+    background: #000;
+    display: flex;
+    flex-direction: column;
 }
 
-h1 {
-    color: white;
+/* ==========================================================================
+   Background Layer (z-index: 0)
+   ========================================================================== */
+
+#backgroundLayer {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: #000;
+}
+
+/* Camera Feed */
+#cameraFeed {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #1a1a1a;
+    display: block;
+}
+
+#cameraFeed:not([src]) {
+    background: linear-gradient(45deg, #1a1a1a 25%, transparent 25%), 
+                linear-gradient(-45deg, #1a1a1a 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #1a1a1a 75%), 
+                linear-gradient(-45deg, transparent 75%, #1a1a1a 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+/* Map Container */
+#mapContainer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: none; /* Hidden by default, shown in map mode */
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+    background: #2d3748;
+}
+
+.map-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #e2e8f0;
     text-align: center;
-    margin-bottom: 2rem;
-    font-size: 2.5rem;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-/* Trip Control Panel */
-.trip-controls {
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(10px);
-    border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     padding: 2rem;
-    margin: 0 auto;
-    max-width: 500px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-.trip-controls h3 {
-    color: #333;
-    margin-bottom: 1.5rem;
+.map-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.7;
+}
+
+.map-placeholder p {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.map-placeholder small {
+    font-size: 1rem;
+    opacity: 0.8;
+}
+
+/* ==========================================================================
+   HUD Overlay Canvas (z-index: 1)
+   ========================================================================== */
+
+#hudCanvas {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    width: 100%;
+    height: 100%;
+}
+
+/* ==========================================================================
+   Controls Layer (z-index: 2)
+   ========================================================================== */
+
+#controlsLayer {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+}
+
+/* Top Status Bar */
+#topBar {
+    pointer-events: auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 1rem;
+    background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 70%, transparent 100%);
+    backdrop-filter: blur(10px);
+}
+
+.status-group,
+.stats-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0.5rem 0.75rem;
+    background: rgba(0,0,0,0.5);
+    border-radius: 1rem;
+    backdrop-filter: blur(10px);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981; /* Green for ready */
+    flex-shrink: 0;
+}
+
+.status-indicator.recording .status-dot {
+    background: #ef4444; /* Red for recording */
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.mode-badge {
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 0.25rem 0.75rem;
+    background: rgba(99, 102, 241, 0.8);
+    border-radius: 1rem;
+    backdrop-filter: blur(10px);
+    letter-spacing: 0.05em;
+}
+
+.gps-indicator,
+.storage-info {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: #e5e7eb;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.gps-icon,
+.storage-icon {
+    font-size: 0.875rem;
+}
+
+/* Bottom Control Bar */
+#bottomBar {
+    pointer-events: auto;
+    padding: 1rem;
+    background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 70%, transparent 100%);
+    backdrop-filter: blur(10px);
+}
+
+.control-group {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1.5rem;
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.control-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 1rem;
+    border: none;
+    border-radius: 1rem;
+    font-family: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 80px;
+    backdrop-filter: blur(10px);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.control-btn:active {
+    transform: scale(0.95);
+}
+
+.control-btn.primary {
+    background: rgba(239, 68, 68, 0.9);
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+}
+
+.control-btn.primary:hover {
+    background: rgba(239, 68, 68, 1);
+    box-shadow: 0 6px 25px rgba(239, 68, 68, 0.5);
+}
+
+.control-btn.primary.recording {
+    background: rgba(34, 197, 94, 0.9);
+    box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4);
+}
+
+.control-btn.primary.recording:hover {
+    background: rgba(34, 197, 94, 1);
+    box-shadow: 0 6px 25px rgba(34, 197, 94, 0.5);
+}
+
+.control-btn.secondary {
+    background: rgba(75, 85, 99, 0.8);
+    color: #e5e7eb;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.control-btn.secondary:hover {
+    background: rgba(75, 85, 99, 0.9);
+    color: #fff;
+}
+
+.btn-icon {
+    font-size: 1.5rem;
+    line-height: 1;
+}
+
+.btn-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* ==========================================================================
+   Accessibility
+   ========================================================================== */
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ==========================================================================
+   Mode States
+   ========================================================================== */
+
+/* Camera Mode (default) */
+.mode-camera #cameraFeed {
+    display: block;
+}
+
+.mode-camera #mapContainer {
+    display: none;
+}
+
+.mode-camera .mode-badge {
+    background: rgba(239, 68, 68, 0.8);
+}
+
+/* Map Mode */
+.mode-map #cameraFeed {
+    display: none;
+}
+
+.mode-map #mapContainer {
+    display: block;
+}
+
+.mode-map .mode-badge {
+    background: rgba(34, 197, 94, 0.8);
+}
+
+/* ==========================================================================
+   Responsive Design
+   ========================================================================== */
+
+/* Small devices (landscape phones, 576px and up) */
+@media (min-width: 576px) and (orientation: landscape) {
+    #topBar {
+        padding: 0.75rem 1.5rem;
+    }
+    
+    #bottomBar {
+        padding: 0.75rem 1.5rem;
+    }
+    
+    .control-group {
+        gap: 2rem;
+    }
+    
+    .control-btn {
+        min-width: 90px;
+        padding: 1.25rem;
+    }
+}
+
+/* Medium devices (tablets, 768px and up) */
+@media (min-width: 768px) {
+    #topBar {
+        padding: 1.5rem 2rem;
+    }
+    
+    #bottomBar {
+        padding: 1.5rem 2rem;
+    }
+    
+    .control-group {
+        gap: 2.5rem;
+        max-width: 500px;
+    }
+    
+    .control-btn {
+        min-width: 100px;
+        padding: 1.5rem;
+        border-radius: 1.25rem;
+    }
+    
+    .btn-icon {
+        font-size: 1.75rem;
+    }
+    
+    .btn-label {
+        font-size: 0.875rem;
+    }
+}
+
+/* Large devices (desktops, 992px and up) */
+@media (min-width: 992px) {
+    #controlsLayer {
+        padding: 2rem;
+    }
+    
+    .control-group {
+        max-width: 600px;
+        gap: 3rem;
+    }
+}
+
+/* ==========================================================================
+   Dark Mode Support
+   ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+    .map-placeholder {
+        color: #f1f5f9;
+    }
+    
+    .status-indicator {
+        background: rgba(0,0,0,0.7);
+    }
+    
+    .gps-indicator,
+    .storage-info {
+        color: #f3f4f6;
+    }
+}
+
+/* ==========================================================================
+   Reduced Motion Support
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+    .control-btn {
+        transition: none;
+    }
+    
+    .status-dot {
+        animation: none;
+    }
+    
+    .control-btn:active {
+        transform: none;
+    }
+}
     font-size: 1.5rem;
     text-align: center;
     font-weight: 600;
