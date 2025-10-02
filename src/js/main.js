@@ -333,7 +333,7 @@ function startRealtimeUpdates() {
         // Update GPS status
         if (currentTrip.points.length > 0) {
             const lastPoint = currentTrip.points[currentTrip.points.length - 1];
-            updateGPSStatus(`GPS: ${lastPoint.accuracy.toFixed(2)}m`, 'active');
+            updateGPSStatus(`GPS: ${lastPoint.accuracy.toFixed(2)} m`, 'active');
         }
         
     }, 500); // Update every 500ms
