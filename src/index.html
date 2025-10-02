@@ -10,6 +10,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>RoadTrip - Live Recording</title>
+    <!-- MapLibre GL JS -->
+    <link href="https://unpkg.com/maplibre-gl@^3/dist/maplibre-gl.css" rel="stylesheet">
+    <script src="https://unpkg.com/maplibre-gl@^3/dist/maplibre-gl.js"></script>
     <link rel="stylesheet" href="./css/styles.css">
 </head>
 
@@ -26,13 +29,11 @@
             <!-- Map Container (Tracking Mode) -->
             <div id="mapContainer">
                 <div id="map">
-                    <!-- Map will be initialized here -->
-                    <div class="map-placeholder">
-                        <div class="map-icon">🗺️</div>
-                        <p>Map Mode</p>
-                        <small>GPS tracking without camera</small>
-                    </div>
+                    <!-- MapLibre GL map will be initialized here -->
                 </div>
+                <canvas id="mapFallback" style="display: none;">
+                    <!-- Fallback canvas for offline mode -->
+                </canvas>
             </div>
         </div>
 
@@ -71,6 +72,12 @@
                         <span class="btn-label">Mode</span>
                     </button>
 
+                    <!-- Fit Map (shown only in map mode) -->
+                    <button id="fitBtn" class="control-btn secondary map-only">
+                        <span class="btn-icon">🎯</span>
+                        <span class="btn-label">Fit</span>
+                    </button>
+
                     <!-- Start/Stop Recording -->
                     <button id="recordBtn" class="control-btn primary">
                         <span class="btn-icon" id="recordIcon">▶️</span>
@@ -91,7 +98,9 @@
     <div id="ariaLive" aria-live="polite" aria-atomic="true" class="sr-only"></div>
 
     <!-- Scripts -->
+    <script type="module" src="./js/TripRecorder.js"></script>
     <script type="module" src="./js/LiveHUD.js"></script>
+    <script type="module" src="./js/MapView.js"></script>
     <script type="module" src="./js/main.js"></script>
 </body>
 

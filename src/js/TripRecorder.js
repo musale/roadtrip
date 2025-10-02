@@ -353,16 +353,5 @@ class TripRecorder {
     }
 }
 
-// Create a singleton instance
-const tripRecorder = new TripRecorder();
-
-// Export static methods for easy usage
-export default {
-    startTrip: () => tripRecorder.startTrip(),
-    stopTrip: () => tripRecorder.stopTrip(),
-    getCurrentTrip: () => tripRecorder.getCurrentTrip(),
-    exportGPX: () => tripRecorder.exportGPX(),
-    exportGeoJSON: () => tripRecorder.exportGeoJSON(),
-    getTripsFromLocalStorage: () => tripRecorder.getTripsFromLocalStorage(),
-    clearLocalStorage: () => tripRecorder.clearLocalStorage()
-};
+// Export the TripRecorder class
+export default TripRecorder;
