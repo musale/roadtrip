@@ -1,28 +1,21 @@
 /**
  * RoadTrip - Mobile Recording App Main Script
  * 
- * Integrates LiveHUD component with geolocation, camera/map modes,
- * and recording controls for a mobile-first PWA experience.
+ * Integrates TripRecorder, LiveHUD, and MapView components for a mobile-first PWA
+ * experience with real-time GPS tracking and map visualization.
  */
 
+import TripRecorder from './TripRecorder.js';
 import LiveHUD from './LiveHUD.js';
+import MapView from './MapView.js';
 
 // App state
 let currentMode = 'camera'; // 'camera' or 'map'
-let isRecording = false;
-let tripStartTime = null;
-let lastPosition = null;
-let totalDistance = 0;
-let positionHistory = [];
-let watchId = null;
-let wakeLock = null;
-
-// HUD instance
+let tripRecorder = null;
 let hud = null;
-
-// MediaRecorder for demo (not fully implemented)
-let mediaRecorder = null;
-let recordedChunks = [];
+let mapView = null;
+let wakeLock = null;
+let updateInterval = null;
 
 // DOM elements
 let elements = {};
@@ -30,20 +23,21 @@ let elements = {};
 /**
  * Initialize the recording application
  */
-function initializeApp() {
+async function initializeApp() {
     console.log('RoadTrip Recording App - Initializing...');
     
     // Get DOM references
     cacheElements();
     
-    // Initialize LiveHUD component
+    // Initialize components
+    initializeTripRecorder();
     initializeHUD();
     
     // Setup event listeners
     setupEventListeners();
     
     // Initialize camera/map modes
-    initializeModes();
+    await initializeModes();
     
     // Update initial UI state
     updateUI();
@@ -62,6 +56,7 @@ function cacheElements() {
         mapContainer: document.getElementById('mapContainer'),
         recordBtn: document.getElementById('recordBtn'),
         modeToggle: document.getElementById('modeToggle'),
+        fitBtn: document.getElementById('fitBtn'),
         settingsBtn: document.getElementById('settingsBtn'),
         recordingStatus: document.getElementById('recordingStatus'),
         statusText: document.getElementById('statusText'),
@@ -77,12 +72,20 @@ function cacheElements() {
 }
 
 /**
+ * Initialize TripRecorder
+ */
+function initializeTripRecorder() {
+    tripRecorder = new TripRecorder();
+    console.log('TripRecorder initialized');
+}
+
+/**
  * Initialize LiveHUD component
  */
 function initializeHUD() {
     hud = new LiveHUD({
         showHeading: true,
-        showVU: false, // Disable VU meter for now
+        showVU: false,
         theme: {
             fg: '#ffffff',
             shadow: '#000000',
@@ -93,8 +96,30 @@ function initializeHUD() {
     });
     
     hud.attach(elements.hudCanvas);
-    
     console.log('LiveHUD initialized');
+}
+
+/**
+ * Initialize MapView
+ */
+async function initializeMapView() {
+    if (mapView) return mapView;
+    
+    try {
+        mapView = new MapView({
+            container: elements.mapContainer,
+            useMapLibre: true,
+            initialCenter: [-122.4194, 37.7749], // Default to SF
+            initialZoom: 14
+        });
+        
+        await mapView.init();
+        console.log('MapView initialized');
+        return mapView;
+    } catch (error) {
+        console.error('Failed to initialize MapView:', error);
+        throw error;
+    }
 }
 
 /**
@@ -106,6 +131,9 @@ function setupEventListeners() {
     
     // Mode toggle button
     elements.modeToggle.addEventListener('click', toggleMode);
+    
+    // Fit button (map mode only)
+    elements.fitBtn.addEventListener('click', fitMapToTrip);
     
     // Settings button (placeholder)
     elements.settingsBtn.addEventListener('click', showSettings);
@@ -130,9 +158,6 @@ async function initializeModes() {
     if (currentMode === 'camera') {
         await initializeCamera();
     }
-    
-    // Initialize map placeholder (real map integration would go here)
-    initializeMap();
 }
 
 /**
@@ -149,12 +174,6 @@ async function initializeCamera() {
         });
         
         elements.cameraFeed.srcObject = stream;
-        
-        // Setup for HUD compositing
-        elements.cameraFeed.addEventListener('loadeddata', () => {
-            console.log('Camera feed ready for compositing');
-        });
-        
         console.log('Camera initialized successfully');
         
     } catch (error) {
@@ -164,28 +183,20 @@ async function initializeCamera() {
 }
 
 /**
- * Initialize map (placeholder for real map integration)
- */
-function initializeMap() {
-    // TODO: Initialize real map here (Leaflet, MapBox, etc.)
-    console.log('Map placeholder initialized');
-}
-
-/**
  * Toggle between camera and map modes
  */
-function toggleMode() {
-    currentMode = currentMode === 'camera' ? 'map' : 'camera';
-    setMode(currentMode);
+async function toggleMode() {
+    const newMode = currentMode === 'camera' ? 'map' : 'camera';
+    await setMode(newMode);
     
     // Update aria-live for accessibility
-    elements.ariaLive.textContent = `Switched to ${currentMode} mode`;
+    elements.ariaLive.textContent = `Switched to ${newMode} mode`;
 }
 
 /**
  * Set the current mode (camera or map)
  */
-function setMode(mode) {
+async function setMode(mode) {
     currentMode = mode;
     
     // Update CSS class for mode
@@ -194,6 +205,29 @@ function setMode(mode) {
     // Update mode indicator
     elements.modeIndicator.textContent = mode === 'camera' ? 'Camera' : 'Map';
     
+    // Initialize map view if switching to map mode
+    if (mode === 'map' && !mapView) {
+        try {
+            await initializeMapView();
+            
+            // If we have an active trip, update the map
+            const currentTrip = tripRecorder.getCurrentTrip();
+            if (currentTrip && currentTrip.points.length > 0) {
+                mapView.updateLiveTrack(currentTrip.points);
+                if (currentTrip.points.length > 0) {
+                    const lastPoint = currentTrip.points[currentTrip.points.length - 1];
+                    mapView.setCurrentPoint(lastPoint);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to initialize map view:', error);
+            // Fall back to camera mode
+            currentMode = 'camera';
+            elements.root.className = 'mode-camera';
+            elements.modeIndicator.textContent = 'Camera';
+        }
+    }
+    
     console.log(`Mode set to: ${mode}`);
 }
 
@@ -201,6 +235,8 @@ function setMode(mode) {
  * Toggle recording state
  */
 async function toggleRecording() {
+    const isRecording = tripRecorder.isTracking;
+    
     if (isRecording) {
         await stopRecording();
     } else {
@@ -213,23 +249,17 @@ async function toggleRecording() {
  */
 async function startRecording() {
     try {
-        isRecording = true;
-        tripStartTime = Date.now();
-        totalDistance = 0;
-        positionHistory = [];
-        lastPosition = null;
+        // Start trip recording
+        tripRecorder.startTrip();
         
         // Start HUD
         hud.start();
         
-        // Start geolocation tracking
-        startGeolocationTracking();
+        // Start real-time updates
+        startRealtimeUpdates();
         
         // Acquire wake lock to prevent screen sleep
         await acquireWakeLock();
-        
-        // Setup MediaRecorder demo (canvas.captureStream)
-        setupMediaRecorderDemo();
         
         updateUI();
         updateStatus('Recording', 'recording');
@@ -238,7 +268,6 @@ async function startRecording() {
         
     } catch (error) {
         console.error('Failed to start recording:', error);
-        isRecording = false;
         updateStatus('Error starting recording', 'error');
     }
 }
@@ -248,19 +277,17 @@ async function startRecording() {
  */
 async function stopRecording() {
     try {
-        isRecording = false;
+        // Stop trip recording
+        const trip = tripRecorder.stopTrip();
         
         // Stop HUD
         hud.stop();
         
-        // Stop geolocation tracking
-        stopGeolocationTracking();
+        // Stop real-time updates
+        stopRealtimeUpdates();
         
         // Release wake lock
         await releaseWakeLock();
-        
-        // Stop MediaRecorder demo
-        stopMediaRecorderDemo();
         
         updateUI();
         updateStatus('Stopped', 'stopped');
@@ -268,7 +295,9 @@ async function stopRecording() {
         console.log('Recording stopped');
         
         // Show trip summary
-        showTripSummary();
+        if (trip) {
+            showTripSummary(trip);
+        }
         
     } catch (error) {
         console.error('Failed to stop recording:', error);
@@ -277,206 +306,220 @@ async function stopRecording() {
 }
 
 /**
- * Start geolocation tracking
+ * Start real-time updates for HUD and map
  */
-function startGeolocationTracking() {
-    if (!navigator.geolocation) {
-        console.warn('Geolocation not supported');
-        updateGPSStatus('GPS unavailable', 'error');
-        startMockGPS(); // Fallback to mock data for demo
-        return;
+function startRealtimeUpdates() {
+    if (updateInterval) {
+        clearInterval(updateInterval);
     }
     
-    const options = {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 1000
-    };
-    
-    watchId = navigator.geolocation.watchPosition(
-        handlePositionUpdate,
-        handlePositionError,
-        options
-    );
-    
-    updateGPSStatus('Acquiring GPS...', 'acquiring');
-    console.log('Geolocation tracking started');
-}
-
-/**
- * Stop geolocation tracking
- */
-function stopGeolocationTracking() {
-    if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-        console.log('Geolocation tracking stopped');
-    }
-}
-
-/**
- * Handle position updates from GPS
- */
-function handlePositionUpdate(position) {
-    const currentPosition = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        accuracy: position.coords.accuracy,
-        heading: position.coords.heading,
-        speed: position.coords.speed, // m/s
-        timestamp: Date.now()
-    };
-    
-    positionHistory.push(currentPosition);
-    
-    // Calculate distance if we have a previous position
-    let speedKph = 0;
-    if (lastPosition) {
-        const distance = calculateDistance(lastPosition, currentPosition);
-        totalDistance += distance;
+    updateInterval = setInterval(() => {
+        const currentTrip = tripRecorder.getCurrentTrip();
+        if (!currentTrip) return;
         
-        // Calculate speed in km/h
-        const timeDelta = (currentPosition.timestamp - lastPosition.timestamp) / 1000; // seconds
-        if (timeDelta > 0) {
-            speedKph = (distance / 1000) / (timeDelta / 3600); // km/h
-        }
-    }
-    
-    lastPosition = currentPosition;
-    
-    // Update HUD with new data
-    updateHUD(speedKph, currentPosition.heading);
-    
-    // Update GPS status
-    updateGPSStatus(`GPS: ${position.coords.accuracy}m`, 'active');
-}
-
-/**
- * Handle GPS errors
- */
-function handlePositionError(error) {
-    console.warn('GPS error:', error);
-    updateGPSStatus('GPS error', 'error');
-    
-    // Fallback to mock GPS for demo purposes
-    if (isRecording) {
-        startMockGPS();
-    }
-}
-
-/**
- * Start mock GPS data for demo (when real GPS unavailable)
- */
-function startMockGPS() {
-    console.log('Starting mock GPS data for demo');
-    updateGPSStatus('Demo mode', 'demo');
-    
-    let mockSpeed = 25; // Base speed in km/h
-    let mockHeading = 45; // Base heading in degrees
-    
-    const mockInterval = setInterval(() => {
-        if (!isRecording) {
-            clearInterval(mockInterval);
-            return;
+        // Update HUD
+        updateHUD(currentTrip);
+        
+        // Update map view if in map mode
+        if (currentMode === 'map' && mapView && currentTrip.points.length > 0) {
+            mapView.updateLiveTrack(currentTrip.points);
+            
+            const lastPoint = currentTrip.points[currentTrip.points.length - 1];
+            if (lastPoint) {
+                mapView.setCurrentPoint(lastPoint);
+            }
         }
         
-        // Simulate realistic speed variations
-        mockSpeed = 25 + Math.sin(Date.now() / 5000) * 15;
-        mockSpeed = Math.max(0, mockSpeed);
+        // Update GPS status
+        if (currentTrip.points.length > 0) {
+            const lastPoint = currentTrip.points[currentTrip.points.length - 1];
+            updateGPSStatus(`GPS: ${lastPoint.accuracy.toFixed(2)} m`, 'active');
+        }
         
-        // Gradually rotate heading
-        mockHeading = (mockHeading + 0.5) % 360;
-        
-        // Simulate distance accumulation
-        const timeDelta = 1; // 1 second intervals
-        const distanceM = (mockSpeed / 3.6) * timeDelta; // m/s * seconds
-        totalDistance += distanceM;
-        
-        updateHUD(mockSpeed, mockHeading);
-    }, 1000);
+    }, 500); // Update every 500ms
+}
+
+/**
+ * Stop real-time updates
+ */
+function stopRealtimeUpdates() {
+    if (updateInterval) {
+        clearInterval(updateInterval);
+        updateInterval = null;
+    }
 }
 
 /**
  * Update HUD with current trip data
  */
-function updateHUD(speedKph, headingDeg) {
-    if (!hud || !isRecording) return;
+function updateHUD(trip) {
+    if (!hud || !trip) return;
     
-    const elapsedMs = Date.now() - tripStartTime;
+    const stats = trip.stats || { distanceMeters: 0, durationMs: 0, avgSpeedKph: 0 };
+    const points = trip.points || [];
     
-    // If in camera mode, composite with video background
-    if (currentMode === 'camera' && elements.cameraFeed.readyState >= 2) {
-        hud.drawBackgroundFrame(elements.cameraFeed);
+    // Calculate current speed from latest points
+    let currentSpeedKph = 0;
+    if (points.length >= 2) {
+        const latest = points[points.length - 1];
+        const previous = points[points.length - 2];
+        const timeDelta = (latest.timestamp - previous.timestamp) / 1000; // seconds
+        
+        if (timeDelta > 0) {
+            const distance = calculateDistance(
+                previous.lat, previous.lon,
+                latest.lat, latest.lon
+            );
+            currentSpeedKph = (distance / 1000) / (timeDelta / 3600); // km/h
+        }
     }
     
-    hud.update({
-        speedKph: speedKph || 0,
-        elapsedMs: elapsedMs,
-        distanceM: totalDistance,
-        headingDeg: headingDeg || 0,
-        vuLevel: Math.random() * 0.3 // Mock audio level
-    });
+    // Get heading from latest point
+    let heading = 0;
+    if (points.length > 0) {
+        const latest = points[points.length - 1];
+        if (latest.heading !== undefined && latest.heading !== null) {
+            heading = latest.heading;
+        }
+    }
     
-    // Update accessibility
-    const timeStr = formatTime(elapsedMs);
-    const distanceStr = (totalDistance / 1000).toFixed(2);
-    elements.ariaLive.textContent = 
-        `Speed: ${speedKph.toFixed(1)} km/h, Time: ${timeStr}, Distance: ${distanceStr} km`;
+    // Update HUD
+    const hudStats = {
+        speed: Math.max(0, currentSpeedKph),
+        heading: heading,
+        duration: stats.durationMs,
+        distance: stats.distanceMeters
+    };
+    
+    hud.update(hudStats);
 }
 
 /**
- * Calculate distance between two GPS points (Haversine formula)
+ * Fit map to current trip
  */
-function calculateDistance(pos1, pos2) {
+function fitMapToTrip() {
+    if (!mapView) return;
+    
+    const currentTrip = tripRecorder.getCurrentTrip();
+    if (currentTrip && currentTrip.points.length > 0) {
+        mapView.fitBoundsToPoints(currentTrip.points);
+        elements.ariaLive.textContent = 'Map fitted to trip route';
+    }
+}
+
+/**
+ * Calculate distance between two points using Haversine formula
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
     const R = 6371000; // Earth's radius in meters
-    const dLat = (pos2.lat - pos1.lat) * Math.PI / 180;
-    const dLng = (pos2.lng - pos1.lng) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(pos1.lat * Math.PI / 180) * Math.cos(pos2.lat * Math.PI / 180) *
-              Math.sin(dLng/2) * Math.sin(dLng/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c; // Distance in meters
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
 }
 
 /**
- * Setup MediaRecorder demo for canvas recording
+ * Convert degrees to radians
  */
-function setupMediaRecorderDemo() {
-    try {
-        // Demo: How to capture the HUD canvas for recording
-        const stream = elements.hudCanvas.captureStream(30);
-        
-        mediaRecorder = new MediaRecorder(stream, {
-            mimeType: 'video/webm;codecs=vp9'
-        });
-        
-        mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                recordedChunks.push(event.data);
-            }
-        };
-        
-        mediaRecorder.onstop = () => {
-            console.log('MediaRecorder stopped, recorded chunks:', recordedChunks.length);
-            // TODO: Handle recorded video (save, upload, etc.)
-        };
-        
-        mediaRecorder.start(1000); // Record in 1-second chunks
-        console.log('MediaRecorder demo started');
-        
-    } catch (error) {
-        console.warn('MediaRecorder not available:', error);
+function toRadians(degrees) {
+    return degrees * (Math.PI / 180);
+}
+
+/**
+ * Update UI state based on recording status
+ */
+function updateUI() {
+    const isRecording = tripRecorder ? tripRecorder.isTracking : false;
+    
+    // Update record button
+    elements.recordBtn.className = isRecording ? 'control-btn primary recording' : 'control-btn primary';
+    elements.recordIcon.textContent = isRecording ? '⏸️' : '▶️';
+    elements.recordLabel.textContent = isRecording ? 'Stop' : 'Start';
+    
+    // Update recording status indicator
+    if (isRecording) {
+        elements.recordingStatus.classList.add('recording');
+    } else {
+        elements.recordingStatus.classList.remove('recording');
     }
 }
 
 /**
- * Stop MediaRecorder demo
+ * Update status text and indicator
  */
-function stopMediaRecorderDemo() {
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-        recordedChunks = [];
+function updateStatus(text, type = 'ready') {
+    elements.statusText.textContent = text;
+    
+    // Update status dot color based on type
+    const statusDot = elements.recordingStatus.querySelector('.status-dot');
+    statusDot.className = 'status-dot';
+    
+    switch (type) {
+        case 'recording':
+            elements.recordingStatus.classList.add('recording');
+            break;
+        case 'error':
+            statusDot.style.background = '#ef4444';
+            break;
+        case 'stopped':
+            statusDot.style.background = '#f59e0b';
+            break;
+        default:
+            statusDot.style.background = '#10b981';
     }
+    
+    // Update aria-live for accessibility
+    elements.ariaLive.textContent = text;
+}
+
+/**
+ * Update GPS status
+ */
+function updateGPSStatus(text, type = 'active') {
+    elements.gpsText.textContent = text;
+    
+    // Update GPS icon based on type
+    const gpsIcon = elements.gpsStatus.querySelector('.gps-icon');
+    switch (type) {
+        case 'active':
+            gpsIcon.textContent = '📍';
+            break;
+        case 'acquiring':
+            gpsIcon.textContent = '🔍';
+            break;
+        case 'error':
+            gpsIcon.textContent = '❌';
+            break;
+        default:
+            gpsIcon.textContent = '📍';
+    }
+}
+
+/**
+ * Show settings dialog (placeholder)
+ */
+function showSettings() {
+    alert('Settings dialog would appear here');
+}
+
+/**
+ * Show trip summary
+ */
+function showTripSummary(trip) {
+    if (!trip || !trip.stats) return;
+    
+    const stats = trip.stats;
+    const distanceKm = (stats.distanceMeters / 1000).toFixed(2);
+    const durationMin = Math.round(stats.durationMs / 60000);
+    const avgSpeedKph = stats.avgSpeedKph.toFixed(1);
+    
+    const summary = `Trip Summary:\nDistance: ${distanceKm} km\nDuration: ${durationMin} minutes\nAverage Speed: ${avgSpeedKph} km/h\nPoints Recorded: ${trip.points.length}`;
+    
+    // For now, just show an alert. In a real app, this would be a proper modal
+    alert(summary);
 }
 
 /**
@@ -497,96 +540,15 @@ async function acquireWakeLock() {
  * Release wake lock
  */
 async function releaseWakeLock() {
-    if (wakeLock) {
-        await wakeLock.release();
-        wakeLock = null;
-        console.log('Wake lock released');
+    try {
+        if (wakeLock) {
+            await wakeLock.release();
+            wakeLock = null;
+            console.log('Wake lock released');
+        }
+    } catch (error) {
+        console.warn('Wake lock release failed:', error);
     }
-}
-
-/**
- * Update UI state based on recording status
- */
-function updateUI() {
-    // Update record button
-    if (isRecording) {
-        elements.recordBtn.classList.add('recording');
-        elements.recordIcon.textContent = '⏹️';
-        elements.recordLabel.textContent = 'Stop';
-        elements.recordingStatus.classList.add('recording');
-    } else {
-        elements.recordBtn.classList.remove('recording');
-        elements.recordIcon.textContent = '▶️';
-        elements.recordLabel.textContent = 'Start';
-        elements.recordingStatus.classList.remove('recording');
-    }
-    
-    // Update storage indicator
-    updateStorageInfo();
-}
-
-/**
- * Update recording status
- */
-function updateStatus(text, state) {
-    elements.statusText.textContent = text;
-    
-    // Update status indicator class
-    elements.recordingStatus.className = `status-indicator ${state || ''}`;
-}
-
-/**
- * Update GPS status
- */
-function updateGPSStatus(text, state) {
-    elements.gpsText.textContent = text;
-    
-    // Could add GPS status styling based on state
-    console.log(`GPS Status: ${text} (${state})`);
-}
-
-/**
- * Update storage information
- */
-function updateStorageInfo() {
-    // Estimate storage usage
-    const pointsCount = positionHistory.length;
-    const estimatedKB = pointsCount * 0.1; // Rough estimate
-    
-    elements.storageText.textContent = `${estimatedKB.toFixed(1)}KB`;
-}
-
-/**
- * Format time from milliseconds to HH:MM:SS
- */
-function formatTime(ms) {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-}
-
-/**
- * Show settings dialog (placeholder)
- */
-function showSettings() {
-    alert('Settings panel would open here.\n\nPossible settings:\n- HUD options (heading, VU meter)\n- Recording quality\n- GPS accuracy\n- Export formats');
-}
-
-/**
- * Show trip summary after recording
- */
-function showTripSummary() {
-    const duration = formatTime(Date.now() - tripStartTime);
-    const distance = (totalDistance / 1000).toFixed(2);
-    const points = positionHistory.length;
-    
-    const summary = `Trip Summary:\n\nDuration: ${duration}\nDistance: ${distance} km\nGPS Points: ${points}`;
-    
-    console.log(summary);
-    // Could show in a proper modal/dialog
 }
 
 /**
@@ -594,9 +556,13 @@ function showTripSummary() {
  */
 function handleVisibilityChange() {
     if (document.hidden) {
-        console.log('App hidden - continuing recording in background');
+        console.log('App went to background');
     } else {
-        console.log('App visible - resuming active state');
+        console.log('App came to foreground');
+        // Re-acquire wake lock if recording
+        if (tripRecorder && tripRecorder.isTracking && !wakeLock) {
+            acquireWakeLock();
+        }
     }
 }
 
@@ -604,175 +570,21 @@ function handleVisibilityChange() {
  * Handle device orientation changes
  */
 function handleOrientationChange() {
+    // Re-setup canvas after orientation change
     setTimeout(() => {
-        console.log('Orientation changed - HUD will auto-adjust');
+        if (hud) {
+            hud.attach(elements.hudCanvas);
+        }
+        if (mapView && mapView.canvas) {
+            mapView.setupCanvas();
+            mapView.drawCanvas();
+        }
     }, 100);
 }
 
-// Initialize app when DOM is ready
+// Initialize app when DOM is loaded
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
     initializeApp();
-}
-
-function addEventListeners() {
-    const startBtn = document.getElementById('start-trip');
-    const stopBtn = document.getElementById('stop-trip');
-    const exportGpxBtn = document.getElementById('export-gpx');
-    const exportGeojsonBtn = document.getElementById('export-geojson');
-    const clearBtn = document.getElementById('clear-storage');
-    const statusDiv = document.getElementById('trip-status');
-    const statsDiv = document.getElementById('trip-stats');
-    
-    let updateInterval;
-    
-    startBtn.addEventListener('click', () => {
-        try {
-            startBtn.classList.add('loading');
-            const trip = TripRecorder.startTrip();
-            console.log('Trip started:', trip);
-            
-            // Update UI state
-            setTimeout(() => {
-                startBtn.classList.remove('loading');
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
-                statusDiv.textContent = `Trip ${trip.id.substring(0, 8)}... started`;
-                
-                // Update stats every 2 seconds
-                updateInterval = setInterval(() => {
-                    updateTripStats();
-                }, 2000);
-            }, 500);
-            
-        } catch (error) {
-            startBtn.classList.remove('loading');
-            console.error('Failed to start trip:', error);
-            statusDiv.textContent = 'Error: ' + error.message;
-        }
-    });
-    
-    stopBtn.addEventListener('click', () => {
-        try {
-            const trip = TripRecorder.stopTrip();
-            console.log('Trip stopped:', trip);
-            
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
-            exportGpxBtn.disabled = false;
-            exportGeojsonBtn.disabled = false;
-            statusDiv.textContent = 'Trip completed';
-            
-            if (updateInterval) {
-                clearInterval(updateInterval);
-            }
-            
-            updateTripStats();
-            
-        } catch (error) {
-            console.error('Failed to stop trip:', error);
-            statusDiv.textContent = 'Error: ' + error.message;
-        }
-    });
-    
-    exportGpxBtn.addEventListener('click', () => {
-        try {
-            const gpx = TripRecorder.exportGPX();
-            console.log('GPX Export:', gpx);
-            downloadFile(gpx, 'trip.gpx', 'application/gpx+xml');
-        } catch (error) {
-            console.error('Failed to export GPX:', error);
-            alert('Error exporting GPX: ' + error.message);
-        }
-    });
-    
-    exportGeojsonBtn.addEventListener('click', () => {
-        try {
-            const geojson = TripRecorder.exportGeoJSON();
-            console.log('GeoJSON Export:', geojson);
-            downloadFile(JSON.stringify(geojson, null, 2), 'trip.geojson', 'application/json');
-        } catch (error) {
-            console.error('Failed to export GeoJSON:', error);
-            alert('Error exporting GeoJSON: ' + error.message);
-        }
-    });
-    
-    clearBtn.addEventListener('click', () => {
-        if (confirm('Clear all stored trip data?')) {
-            TripRecorder.clearLocalStorage();
-            statusDiv.textContent = 'Storage cleared';
-        }
-    });
-    
-    function updateTripStats() {
-        const trip = TripRecorder.getCurrentTrip();
-        const statsGrid = document.getElementById('trip-stats');
-        
-        if (trip && trip.stats && statsGrid) {
-            const stats = trip.stats;
-            const statItems = statsGrid.querySelectorAll('.stat-item');
-            
-            // Update each stat item
-            if (statItems[0]) {
-                statItems[0].querySelector('.stat-value').textContent = trip.points.length;
-            }
-            if (statItems[1]) {
-                statItems[1].querySelector('.stat-value').textContent = `${(stats.distanceMeters / 1000).toFixed(2)} km`;
-            }
-            if (statItems[2]) {
-                statItems[2].querySelector('.stat-value').textContent = `${Math.round(stats.durationMs / 1000)} sec`;
-            }
-            if (statItems[3]) {
-                statItems[3].querySelector('.stat-value').textContent = `${stats.avgSpeedKph.toFixed(1)} km/h`;
-            }
-        }
-    }
-}
-
-function downloadFile(content, filename, contentType) {
-    const blob = new Blob([content], { type: contentType });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-}
-
-// Example usage as requested
-function demonstrateBasicUsage() {
-    console.log('\n=== TripRecorder Basic Usage Example ===');
-    
-    // Start a trip
-    const trip = TripRecorder.startTrip();
-    console.log('Started trip:', trip.id);
-    
-    // Simulate some time passing (in real usage, GPS points would be collected)
-    setTimeout(() => {
-        // Stop the trip
-        const completedTrip = TripRecorder.stopTrip();
-        console.log('Completed trip:', completedTrip);
-        
-        // Get current trip data
-        const currentTrip = TripRecorder.getCurrentTrip();
-        console.log('Current trip:', currentTrip);
-        
-        // Export data (only works if there are GPS points)
-        try {
-            const gpx = TripRecorder.exportGPX();
-            console.log('GPX export successful');
-        } catch (error) {
-            console.log('GPX export failed (expected - no GPS points):', error.message);
-        }
-        
-        try {
-            const geojson = TripRecorder.exportGeoJSON();
-            console.log('GeoJSON export successful');
-        } catch (error) {
-            console.log('GeoJSON export failed (expected - no GPS points):', error.message);
-        }
-    }, 1000);
 }

@@ -80,6 +80,35 @@ html, body {
     background: #2d3748;
 }
 
+#mapFallback {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: #2d3748;
+}
+
+.maplibregl-map {
+    font-family: inherit;
+}
+
+.maplibregl-ctrl-group {
+    background: rgba(0, 0, 0, 0.8) !important;
+    backdrop-filter: blur(10px);
+    border-radius: 8px !important;
+    border: none !important;
+}
+
+.maplibregl-ctrl button {
+    background: transparent !important;
+    color: #fff !important;
+    border: none !important;
+}
+
+.maplibregl-ctrl button:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
 .map-placeholder {
     display: flex;
     flex-direction: column;
@@ -292,6 +321,15 @@ html, body {
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+}
+
+/* Map-only controls */
+.map-only {
+    display: none;
+}
+
+.mode-map .map-only {
+    display: flex;
 }
 
 /* ==========================================================================
