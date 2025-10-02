@@ -16,35 +16,49 @@ function setupTripRecorderDemo() {
 }
 
 function createDemoControls() {
-    const body = document.body;
+    const appContainer = document.getElementById('app-container');
     
-    // Create a demo control panel
+    // Create the trip controls panel
     const controlPanel = document.createElement('div');
     controlPanel.id = 'trip-controls';
-    controlPanel.style.cssText = `
-        position: fixed;
-        top: 20px;
-        left: 20px;
-        background: rgba(0, 0, 0, 0.8);
-        color: white;
-        padding: 20px;
-        border-radius: 8px;
-        font-family: Arial, sans-serif;
-        z-index: 1000;
-    `;
+    controlPanel.className = 'trip-controls';
     
     controlPanel.innerHTML = `
         <h3>Trip Recorder Demo</h3>
-        <button id="start-trip">Start Trip</button>
-        <button id="stop-trip" disabled>Stop Trip</button>
-        <button id="export-gpx" disabled>Export GPX</button>
-        <button id="export-geojson" disabled>Export GeoJSON</button>
-        <button id="clear-storage">Clear Storage</button>
-        <div id="trip-status">Ready to start</div>
-        <div id="trip-stats"></div>
+        <div class="button-grid">
+            <button id="start-trip" class="btn btn-primary btn-start btn-icon">Start Trip</button>
+            <button id="stop-trip" class="btn btn-secondary btn-stop btn-icon" disabled>Stop Trip</button>
+            <button id="export-gpx" class="btn btn-success btn-export btn-icon" disabled>Export GPX</button>
+            <button id="export-geojson" class="btn btn-success btn-export btn-icon" disabled>Export GeoJSON</button>
+            <button id="clear-storage" class="btn btn-warning btn-clear btn-icon full-width">Clear Storage</button>
+        </div>
+        <div class="status-section">
+            <div id="trip-status" class="trip-status">Ready to start</div>
+            <div class="trip-stats">
+                <h4>Trip Statistics</h4>
+                <div id="trip-stats" class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">Points</span>
+                        <span class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Distance</span>
+                        <span class="stat-value">0.00 km</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Duration</span>
+                        <span class="stat-value">0 sec</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Avg Speed</span>
+                        <span class="stat-value">0.0 km/h</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     `;
     
-    body.appendChild(controlPanel);
+    appContainer.appendChild(controlPanel);
 }
 
 function addEventListeners() {
@@ -60,19 +74,25 @@ function addEventListeners() {
     
     startBtn.addEventListener('click', () => {
         try {
+            startBtn.classList.add('loading');
             const trip = TripRecorder.startTrip();
             console.log('Trip started:', trip);
             
-            startBtn.disabled = true;
-            stopBtn.disabled = false;
-            statusDiv.textContent = `Trip ${trip.id.substring(0, 8)}... started`;
-            
-            // Update stats every 2 seconds
-            updateInterval = setInterval(() => {
-                updateTripStats();
-            }, 2000);
+            // Update UI state
+            setTimeout(() => {
+                startBtn.classList.remove('loading');
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                statusDiv.textContent = `Trip ${trip.id.substring(0, 8)}... started`;
+                
+                // Update stats every 2 seconds
+                updateInterval = setInterval(() => {
+                    updateTripStats();
+                }, 2000);
+            }, 500);
             
         } catch (error) {
+            startBtn.classList.remove('loading');
             console.error('Failed to start trip:', error);
             statusDiv.textContent = 'Error: ' + error.message;
         }
@@ -132,14 +152,25 @@ function addEventListeners() {
     
     function updateTripStats() {
         const trip = TripRecorder.getCurrentTrip();
-        if (trip && trip.stats) {
+        const statsGrid = document.getElementById('trip-stats');
+        
+        if (trip && trip.stats && statsGrid) {
             const stats = trip.stats;
-            statsDiv.innerHTML = `
-                <div><strong>Points:</strong> ${trip.points.length}</div>
-                <div><strong>Distance:</strong> ${(stats.distanceMeters / 1000).toFixed(2)} km</div>
-                <div><strong>Duration:</strong> ${Math.round(stats.durationMs / 1000)} seconds</div>
-                <div><strong>Avg Speed:</strong> ${stats.avgSpeedKph.toFixed(1)} km/h</div>
-            `;
+            const statItems = statsGrid.querySelectorAll('.stat-item');
+            
+            // Update each stat item
+            if (statItems[0]) {
+                statItems[0].querySelector('.stat-value').textContent = trip.points.length;
+            }
+            if (statItems[1]) {
+                statItems[1].querySelector('.stat-value').textContent = `${(stats.distanceMeters / 1000).toFixed(2)} km`;
+            }
+            if (statItems[2]) {
+                statItems[2].querySelector('.stat-value').textContent = `${Math.round(stats.durationMs / 1000)} sec`;
+            }
+            if (statItems[3]) {
+                statItems[3].querySelector('.stat-value').textContent = `${stats.avgSpeedKph.toFixed(1)} km/h`;
+            }
         }
     }
 }
