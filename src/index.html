@@ -3,20 +3,95 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <meta name="description" content="RoadTrip - GPS trip recording web application">
-    <meta name="theme-color" content="#667eea">
-    <title>RoadTrip - GPS Trip Recorder</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="description" content="RoadTrip - GPS trip recording with live HUD overlay">
+    <meta name="theme-color" content="#000000">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>RoadTrip - Live Recording</title>
     <link rel="stylesheet" href="./css/styles.css">
 </head>
 
 <body>
-    <main class="main-content">
-        <h1>Welcome to RoadTrip!</h1>
-        <div id="app-container">
-            <!-- Trip controls will be dynamically inserted here -->
+    <!-- Fullscreen Recording Page Container -->
+    <div id="root">
+        <!-- Background Layer (z-index: 0) -->
+        <div id="backgroundLayer">
+            <!-- Camera Feed (Dashcam Mode) -->
+            <video id="cameraFeed" autoplay playsinline muted>
+                <p>Camera not supported or not available</p>
+            </video>
+
+            <!-- Map Container (Tracking Mode) -->
+            <div id="mapContainer">
+                <div id="map">
+                    <!-- Map will be initialized here -->
+                    <div class="map-placeholder">
+                        <div class="map-icon">🗺️</div>
+                        <p>Map Mode</p>
+                        <small>GPS tracking without camera</small>
+                    </div>
+                </div>
+            </div>
         </div>
-    </main>
+
+        <!-- HUD Overlay Canvas (z-index: 1) -->
+        <canvas id="hudCanvas"></canvas>
+
+        <!-- Controls Layer (z-index: 2) -->
+        <div id="controlsLayer">
+            <!-- Top Status Bar -->
+            <div id="topBar">
+                <div class="status-group">
+                    <div id="recordingStatus" class="status-indicator">
+                        <span class="status-dot"></span>
+                        <span id="statusText">Ready</span>
+                    </div>
+                    <div id="modeIndicator" class="mode-badge">Camera</div>
+                </div>
+                <div class="stats-group">
+                    <div id="gpsStatus" class="gps-indicator">
+                        <span class="gps-icon">📍</span>
+                        <span id="gpsText">GPS</span>
+                    </div>
+                    <div id="storageIndicator" class="storage-info">
+                        <span class="storage-icon">💾</span>
+                        <span id="storageText">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Control Bar -->
+            <div id="bottomBar">
+                <div class="control-group">
+                    <!-- Mode Toggle -->
+                    <button id="modeToggle" class="control-btn secondary">
+                        <span class="btn-icon">🔄</span>
+                        <span class="btn-label">Mode</span>
+                    </button>
+
+                    <!-- Start/Stop Recording -->
+                    <button id="recordBtn" class="control-btn primary">
+                        <span class="btn-icon" id="recordIcon">▶️</span>
+                        <span class="btn-label" id="recordLabel">Start</span>
+                    </button>
+
+                    <!-- Settings -->
+                    <button id="settingsBtn" class="control-btn secondary">
+                        <span class="btn-icon">⚙️</span>
+                        <span class="btn-label">Settings</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Accessibility -->
+    <div id="ariaLive" aria-live="polite" aria-atomic="true" class="sr-only"></div>
+
+    <!-- Scripts -->
+    <script type="module" src="./js/LiveHUD.js"></script>
     <script type="module" src="./js/main.js"></script>
 </body>
 
