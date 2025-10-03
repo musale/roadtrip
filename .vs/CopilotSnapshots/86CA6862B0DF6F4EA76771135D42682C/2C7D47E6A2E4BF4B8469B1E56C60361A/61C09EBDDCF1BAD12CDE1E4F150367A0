@@ -1,0 +1,112 @@
+﻿/**
+ * StatusBar - Application status indicator component
+ * Displays GPS status, recording state, mode, and errors
+ */
+
+import React from 'react';
+import { useAppContext } from '../context/AppContext';
+
+const StatusBar = ({ className = '' }) => {
+  const {
+    state,
+    tripRecorder,
+    localStorage,
+    wakeLock,
+    utils
+  } = useAppContext();
+
+  const { mode, error } = state;
+  const { isRecording } = tripRecorder;
+  const gpsStatus = utils.getGPSStatusDisplay();
+  const storageStats = localStorage.getStorageStats();
+
+  return (
+    <div className={`bg-black/50 text-white ${className}`}>
+      {/* Main Status Row */}
+      <div className="px-4 py-3">
+        <div className="flex justify-between items-center">
+          {/* GPS Status */}
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-300">GPS:</span>
+            <span className={gpsStatus.color}>{gpsStatus.text}</span>
+            {state.gpsStatus.accuracy && (
+              <span className="text-xs text-gray-400">
+                ({Math.round(state.gpsStatus.accuracy)}m)
+              </span>
+            )}
+          </div>
+
+          {/* App Title */}
+          <div className="text-lg font-display tracking-wider">
+            <span className="text-white">Road</span>
+            <span className="text-brand">Trip</span>
+          </div>
+
+          {/* Mode & Storage Indicator */}
+          <div className="flex items-center gap-2 text-sm">
+            <span className="capitalize px-2 py-1 rounded-md bg-gray-800/60 text-gray-200">
+              {mode === 'camera' ? '📱' : '🗺️'} {mode}
+            </span>
+            {storageStats.tripCount > 0 && (
+              <span 
+                className="text-xs px-2 py-1 rounded-md bg-blue-900/40 text-blue-300"
+                title={`${storageStats.tripCount} trips stored (${storageStats.sizeInKB} KB)`}
+              >
+                💾 {storageStats.tripCount}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Recording Indicator */}
+      {isRecording && (
+        <div className="px-4 pb-3 text-center">
+          <div className="inline-flex items-center gap-2 bg-red-600/80 px-4 py-1.5 rounded-full text-xs font-display tracking-wide">
+            <div className="w-2 h-2 bg-red-300 rounded-full animate-pulse"></div>
+            <span>RECORDING</span>
+            {wakeLock.isActive && (
+              <span className="text-xs opacity-75">• Screen Lock On</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Error Banner */}
+      {error && (
+        <div className="px-4 pb-3">
+          <div className="bg-yellow-600/80 px-4 py-2 rounded-md flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs flex-1">
+              <span className="text-lg">⚠️</span>
+              <span className="text-white">{error}</span>
+            </div>
+            <button 
+              onClick={() => window.appActions?.clearError()}
+              className="text-white hover:text-gray-300 text-lg leading-none p-1"
+              aria-label="Dismiss error"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* PWA Status Badge (Development/Testing only) */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="absolute top-16 right-4">
+          <div className="bg-blue-600 text-white text-xs px-2 py-1 rounded-md shadow-nv1">
+            PWA Ready ✅
+          </div>
+        </div>
+      )}
+
+      {/* Accessibility Status Announcements */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {isRecording && 'Trip recording in progress'}
+        {error && `Error: ${error}`}
+      </div>
+    </div>
+  );
+};
+
+export default StatusBar;
