@@ -1,6 +1,6 @@
 /**
  * StatusBar - Application status indicator component
- * Displays GPS status, recording state, mode, and errors
+ * Displays GPS status, recording state, mode, and errors with glassmorphism
  */
 
 import React from 'react';
@@ -21,68 +21,99 @@ const StatusBar = ({ className = '' }) => {
   const storageStats = localStorage.getStorageStats();
 
   return (
-    <div className={`bg-black/50 text-white ${className}`}>
+    <div className={`glass-panel backdrop-blur-xl ${className}`}>
       {/* Main Status Row */}
-      <div className="px-4 py-3">
+      <div className="px-4 py-3 animate-fade-in-up">
         <div className="flex justify-between items-center">
-          {/* GPS Status */}
+          {/* GPS Status with Neon Indicator */}
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-gray-300">GPS:</span>
-            <span className={gpsStatus.color}>{gpsStatus.text}</span>
+            <div className="relative">
+              <div className={`w-2 h-2 rounded-full ${
+                gpsStatus.text === 'Good' ? 'bg-green-500' : 
+                gpsStatus.text === 'Poor' ? 'bg-yellow-500' : 
+                'bg-red-500'
+              }`}></div>
+              {gpsStatus.text === 'Good' && (
+                <div className="absolute inset-0 w-2 h-2 rounded-full bg-green-500 animate-ping opacity-75"></div>
+              )}
+            </div>
+            <span className="text-gray-300 font-display text-xs uppercase tracking-wider">GPS</span>
+            <span className={`${gpsStatus.color} font-semibold`}>{gpsStatus.text}</span>
             {state.gpsStatus.accuracy && (
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-gray-400 font-mono">
                 ({Math.round(state.gpsStatus.accuracy)}m)
               </span>
             )}
           </div>
 
-          {/* App Title */}
+          {/* App Title with Neon Glow */}
           <div className="text-lg font-display tracking-wider">
             <span className="text-white">Road</span>
-            <span className="text-brand">Trip</span>
+            <span className="text-brand drop-shadow-[0_0_10px_rgba(0,245,212,0.5)]">Trip</span>
           </div>
 
           {/* Mode & Storage Indicator */}
           <div className="flex items-center gap-2 text-sm">
-            <span className="capitalize px-2 py-1 rounded-md bg-gray-800/60 text-gray-200">
-              {mode === 'camera' ? '??' : '???'} {mode}
-            </span>
+            <div className={`
+              px-3 py-1.5 rounded-lg 
+              transition-all duration-med ease-tesla
+              ${mode === 'camera' 
+                ? 'bg-gradient-to-r from-cyan-900/40 to-cyan-800/30 text-cyan-300 border border-cyan-700/30' 
+                : 'bg-gradient-to-r from-magenta-900/40 to-magenta-800/30 text-magenta-300 border border-magenta-700/30'
+              }
+            `}>
+              <span className="text-base mr-1">{mode === 'camera' ? '??' : '???'}</span>
+              <span className="font-display text-xs uppercase tracking-wider">{mode}</span>
+            </div>
             {storageStats.tripCount > 0 && (
-              <span 
-                className="text-xs px-2 py-1 rounded-md bg-blue-900/40 text-blue-300"
+              <div 
+                className="px-2 py-1 rounded-lg bg-blue-900/30 text-blue-300 border border-blue-700/30 
+                           hover:bg-blue-900/40 transition-all duration-fast cursor-help"
                 title={`${storageStats.tripCount} trips stored (${storageStats.sizeInKB} KB)`}
               >
-                ?? {storageStats.tripCount}
-              </span>
+                <span className="text-xs">?? {storageStats.tripCount}</span>
+              </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Recording Indicator */}
+      {/* Recording Indicator with Neon Pulse */}
       {isRecording && (
         <div className="px-4 pb-3 text-center">
-          <div className="inline-flex items-center gap-2 bg-red-600/80 px-4 py-1.5 rounded-full text-xs font-display tracking-wide">
-            <div className="w-2 h-2 bg-red-300 rounded-full animate-pulse"></div>
-            <span>RECORDING</span>
+          <div className="inline-flex items-center gap-2 bg-red-600/20 border border-red-500/40 px-4 py-2 rounded-full 
+                          text-xs font-display tracking-wide backdrop-blur-sm
+                          shadow-[0_0_20px_rgba(255,77,79,0.3)]
+                          animate-fade-in-up">
+            <div className="relative">
+              <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+              <div className="absolute inset-0 w-2 h-2 bg-red-400 rounded-full animate-ping"></div>
+            </div>
+            <span className="text-red-200">RECORDING</span>
             {wakeLock.isActive && (
-              <span className="text-xs opacity-75">• Screen Lock On</span>
+              <>
+                <span className="text-red-300/50">•</span>
+                <span className="text-xs opacity-75 text-red-200">?? Screen Lock</span>
+              </>
             )}
           </div>
         </div>
       )}
 
-      {/* Error Banner */}
+      {/* Error Banner with Glassmorphism */}
       {error && (
-        <div className="px-4 pb-3">
-          <div className="bg-yellow-600/80 px-4 py-2 rounded-md flex items-center justify-between gap-3">
+        <div className="px-4 pb-3 animate-fade-in-up">
+          <div className="glass-panel bg-yellow-600/20 border-yellow-500/40 px-4 py-2.5 rounded-lg 
+                          flex items-center justify-between gap-3
+                          shadow-[0_0_15px_rgba(255,230,109,0.2)]">
             <div className="flex items-center gap-2 text-xs flex-1">
               <span className="text-lg">??</span>
-              <span className="text-white">{error}</span>
+              <span className="text-yellow-100 font-medium">{error}</span>
             </div>
             <button 
               onClick={() => window.appActions?.clearError()}
-              className="text-white hover:text-gray-300 text-lg leading-none p-1"
+              className="text-yellow-200 hover:text-yellow-100 text-xl leading-none p-1 
+                         rounded-md hover:bg-yellow-500/20 transition-all duration-fast"
               aria-label="Dismiss error"
             >
               ×
@@ -94,7 +125,9 @@ const StatusBar = ({ className = '' }) => {
       {/* PWA Status Badge (Development/Testing only) */}
       {process.env.NODE_ENV === 'development' && (
         <div className="absolute top-16 right-4">
-          <div className="bg-blue-600 text-white text-xs px-2 py-1 rounded-md shadow-nv1">
+          <div className="glass-panel bg-blue-600/30 border-blue-500/40 text-white text-xs px-3 py-1.5 rounded-lg 
+                          shadow-nv1 backdrop-blur-sm
+                          hover:bg-blue-600/40 transition-all duration-fast">
             PWA Ready ?
           </div>
         </div>

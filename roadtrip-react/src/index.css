@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Neon Velocity Design System Tokens */
+/* Neon Velocity Design System Tokens - Enhanced Tesla-Inspired Edition */
 :root {
   /** Color Primitives (Neon Velocity) */
   --nv-black: #0d0d0d;
@@ -26,10 +26,17 @@
   --nv-green-500: #3ef08c; /* success */
   --nv-red-500: #ff4d4f; /* error */
 
-  /** Elevation & Shadows */
+  /** Tesla-inspired gradients */
+  --nv-gradient-glow: linear-gradient(135deg, rgba(0, 245, 212, 0.1), rgba(255, 27, 155, 0.05));
+  --nv-gradient-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0));
+  --nv-gradient-button: linear-gradient(180deg, rgba(0, 245, 212, 1), rgba(0, 198, 172, 1));
+
+  /** Elevation & Shadows - Enhanced */
   --nv-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --nv-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.45);
   --nv-shadow-3: 0 10px 30px rgba(0, 0, 0, 0.55);
+  --nv-shadow-neon: 0 0 20px rgba(0, 245, 212, 0.3), 0 0 40px rgba(0, 245, 212, 0.1);
+  --nv-shadow-neon-strong: 0 0 30px rgba(0, 245, 212, 0.5), 0 0 60px rgba(0, 245, 212, 0.2);
 
   /** Typography primitives */
   --nv-font-display: "Orbitron", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
@@ -48,30 +55,39 @@
   --nv-radius-sm: 8px;
   --nv-radius-md: 14px;
   --nv-radius-lg: 20px;
+  --nv-radius-xl: 24px;
   --nv-radius-full: 999px;
 
-  /** Motion primitives */
+  /** Motion primitives - Tesla-smooth */
   --nv-ease-in: cubic-bezier(0.4, 0, 1, 1);
   --nv-ease-out: cubic-bezier(0, 0, 0.2, 1);
   --nv-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --nv-ease-glow: cubic-bezier(0.22, 1, 0.36, 1); /* elastic-ish for neon pulses */
+  --nv-ease-tesla: cubic-bezier(0.25, 0.8, 0.25, 1); /* Tesla-like smooth easing */
 
   --nv-dur-fast: 120ms;
   --nv-dur-med: 220ms;
   --nv-dur-slow: 360ms;
+  --nv-dur-slower: 500ms;
 
   /** Layout */
   --nv-container-w: 1200px;
   
   /** Focus */
   --focus-ring: 0 0 0 3px rgba(0, 245, 212, 0.2), 0 0 0 2px var(--nv-cyan-500);
+  
+  /** Glassmorphism */
+  --glass-bg: rgba(18, 18, 18, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-blur: blur(20px);
 }
 
-/* Dark theme baseline (default) */
+/* Dark theme baseline (default) - Enhanced */
 :root {
   --nv-bg: var(--nv-black);
   --nv-surface: #121212;
   --nv-surface-2: #171717;
+  --nv-surface-glass: rgba(18, 18, 18, 0.8);
   --nv-border: #2b2b2b;
   --nv-text: #e9f5f3;
   --nv-muted: #9ca3af;
@@ -117,10 +133,11 @@
   --color-text-inverse: #ffffff;
 }
 
-/* Base styles */
+/* Base styles - Enhanced */
 body {
   color: var(--color-text-primary);
   background-color: var(--color-bg);
+  background-image: var(--nv-gradient-glow);
   margin: 0;
   padding: 0;
   min-height: 100vh;
@@ -140,57 +157,118 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-family: var(--nv-font-body);
+  
+  /* Hardware acceleration */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
-/* Neon borders utility */
+/* Glassmorphism utilities */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--nv-shadow-2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Neon borders utility - Enhanced */
 .nv-neon {
   box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.35), 0 0 22px rgba(0, 245, 212, 0.16) inset;
-}
-.nv-neon-strong {
-  box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.6), 0 0 48px rgba(0, 245, 212, 0.2) inset;
+  position: relative;
 }
 
-/* Focus visible ring */
+.nv-neon-strong {
+  box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.6), 0 0 48px rgba(0, 245, 212, 0.2) inset, var(--nv-shadow-neon);
+  position: relative;
+}
+
+.nv-neon::before,
+.nv-neon-strong::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity var(--nv-dur-fast) var(--nv-ease-tesla);
+  background: linear-gradient(135deg, rgba(0, 245, 212, 0.2), rgba(255, 27, 155, 0.1));
+  z-index: -1;
+  pointer-events: none;
+}
+
+.nv-neon:hover::before,
+.nv-neon-strong:hover::before {
+  opacity: 1;
+}
+
+/* Focus visible ring - Enhanced */
 .focus-visible:focus-visible {
   box-shadow: var(--focus-ring);
   outline: none;
 }
 
-/* Elevated surfaces */
+/* Elevated surfaces - Enhanced */
 .nv-surface {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+  background: var(--nv-gradient-surface);
+  position: relative;
 }
 
-/* Button styles */
+.nv-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at top left, rgba(0, 245, 212, 0.05), transparent 50%);
+  pointer-events: none;
+}
+
+/* Button styles - Enhanced Tesla-inspired */
 .btn-primary {
   border-radius: var(--nv-radius-md);
   padding: var(--nv-space-5) var(--nv-space-5);
   font-size: 15px;
   letter-spacing: 0.025em;
   color: var(--color-brand-fg-on-dark);
-  background-color: var(--color-brand);
+  background: var(--nv-gradient-button);
   font-family: var(--nv-font-display);
   font-weight: 600;
   min-height: 44px;
   min-width: 44px;
   border: none;
   cursor: pointer;
-  transition: transform var(--nv-dur-fast) var(--nv-ease-in-out);
+  position: relative;
+  overflow: hidden;
+  transition: all var(--nv-dur-med) var(--nv-ease-tesla);
   box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.6), 0 0 48px rgba(0, 245, 212, 0.2) inset, var(--nv-shadow-2);
+}
+
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent);
+  opacity: 0;
+  transition: opacity var(--nv-dur-fast) var(--nv-ease-tesla);
+}
+
+.btn-primary:hover::before {
+  opacity: 1;
 }
 
 .btn-primary:hover,
 .btn-primary:focus {
-  transform: translateY(-1px);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.8), 0 0 60px rgba(0, 245, 212, 0.3) inset, var(--nv-shadow-neon-strong);
 }
 
 .btn-primary:active {
-  transform: translateY(0);
+  transform: translateY(-1px) scale(1.01);
 }
 
 .btn-primary:disabled {
   opacity: 0.5;
   pointer-events: none;
+  transform: none;
 }
 
 .btn-recording {
@@ -206,13 +284,15 @@ body {
   min-width: 44px;
   border: none;
   cursor: pointer;
-  transition: opacity var(--nv-dur-fast) var(--nv-ease-in-out);
-  box-shadow: var(--nv-shadow-2);
-  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  transition: all var(--nv-dur-med) var(--nv-ease-tesla);
+  box-shadow: var(--nv-shadow-2), 0 0 30px rgba(255, 77, 79, 0.4);
+  animation: pulse-recording 2s var(--nv-ease-glow) infinite;
 }
 
 .btn-recording:hover {
-  opacity: 0.9;
+  opacity: 0.95;
+  transform: scale(1.05);
+  box-shadow: var(--nv-shadow-3), 0 0 40px rgba(255, 77, 79, 0.6);
 }
 
 .btn-secondary {
@@ -221,21 +301,99 @@ body {
   font-size: 15px;
   letter-spacing: 0.025em;
   color: var(--color-text-primary);
-  background-color: rgba(128, 128, 128, 0.4);
+  background-color: rgba(128, 128, 128, 0.2);
   border: 1px solid var(--nv-border);
   font-family: var(--nv-font-display);
   font-weight: 600;
   min-height: 44px;
   min-width: 44px;
   cursor: pointer;
-  transition: all var(--nv-dur-fast) var(--nv-ease-in-out);
+  position: relative;
+  overflow: hidden;
+  transition: all var(--nv-dur-med) var(--nv-ease-tesla);
   box-shadow: var(--nv-shadow-1);
+}
+
+.btn-secondary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(0, 245, 212, 0.1), transparent);
+  opacity: 0;
+  transition: opacity var(--nv-dur-fast) var(--nv-ease-tesla);
 }
 
 .btn-secondary:hover,
 .btn-secondary:focus {
   border-color: var(--color-brand);
   color: var(--color-brand);
+  background-color: rgba(0, 245, 212, 0.05);
+  transform: translateY(-1px);
+  box-shadow: var(--nv-shadow-2), 0 0 20px rgba(0, 245, 212, 0.1);
+}
+
+.btn-secondary:hover::before {
+  opacity: 1;
+}
+
+/* Mode transition animations */
+.mode-camera,
+.mode-map {
+  transition: background-color var(--nv-dur-slower) var(--nv-ease-tesla);
+}
+
+.mode-camera {
+  background-color: var(--color-bg);
+  background-image: radial-gradient(circle at 20% 50%, rgba(0, 245, 212, 0.03), transparent 50%);
+}
+
+.mode-map {
+  background-color: var(--color-surface);
+  background-image: radial-gradient(circle at 80% 50%, rgba(255, 27, 155, 0.03), transparent 50%);
+}
+
+/* Component fade-in animation */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up var(--nv-dur-slow) var(--nv-ease-tesla);
+}
+
+/* Pulse animation for recording button - Enhanced */
+@keyframes pulse-recording {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: var(--nv-shadow-2), 0 0 30px rgba(255, 77, 79, 0.4);
+  }
+  50% {
+    opacity: 0.85;
+    box-shadow: var(--nv-shadow-2), 0 0 50px rgba(255, 77, 79, 0.6);
+  }
+}
+
+/* Shimmer effect for loading states */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgba(0, 245, 212, 0.1), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
 }
 
 /* Canvas styles for HUD */
@@ -246,7 +404,7 @@ body {
   right: 0;
   bottom: 0;
   pointer-events: none;
-  image-rendering: pixelated; /* Sharp pixel rendering */
+  image-rendering: pixelated;
 }
 
 /* Map container styles */
@@ -254,15 +412,6 @@ body {
   width: 100%;
   height: 100%;
   position: relative;
-}
-
-/* Mode-specific layouts with neon theming */
-.mode-camera {
-  background-color: var(--color-bg);
-}
-
-.mode-map {
-  background-color: var(--color-surface);
 }
 
 /* Accessibility improvements */
@@ -290,9 +439,31 @@ button, input, select, textarea {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Scrollbar styling for Tesla-like appearance */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--nv-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--nv-border);
+  border-radius: var(--nv-radius-full);
+  transition: background var(--nv-dur-fast) var(--nv-ease-tesla);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-brand);
+}
+
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -306,12 +477,14 @@ button, input, select, textarea {
   }
 }
 
-/* Pulse animation for recording button */
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --nv-border: #4a4a4a;
   }
-  50% {
-    opacity: .5;
+  
+  .nv-neon,
+  .nv-neon-strong {
+    border: 2px solid var(--color-brand);
   }
 }
