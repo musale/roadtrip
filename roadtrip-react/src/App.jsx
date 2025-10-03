@@ -1,34 +1,92 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [isRecording, setIsRecording] = useState(false)
+  const [mode, setMode] = useState('camera')
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div className={`min-h-screen transition-colors duration-300 ${mode === 'camera' ? 'mode-camera' : 'mode-map'}`}>
+      {/* Status Bar */}
+      <div className="absolute top-0 left-0 right-0 z-50 bg-black/50 text-white p-4">
+        <div className="flex justify-between items-center">
+          <div className="text-sm">
+            GPS: <span className="text-green-400">Good</span>
+          </div>
+          <div className="text-lg font-mono">
+            RoadTrip
+          </div>
+          <div className="text-sm">
+            Mode: <span className="capitalize">{mode}</span>
+          </div>
+        </div>
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex items-center justify-center">
+        {mode === 'camera' ? (
+          <div className="text-white text-center">
+            <div className="text-6xl mb-4">??</div>
+            <p>Camera View</p>
+            <p className="text-sm opacity-75">Grant camera permission to start</p>
+          </div>
+        ) : (
+          <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+            <div className="text-gray-600 text-center">
+              <div className="text-6xl mb-4">???</div>
+              <p>Map View</p>
+              <p className="text-sm opacity-75">MapLibre will render here</p>
+            </div>
+          </div>
+        )}
       </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+
+      {/* HUD Overlay (Camera mode only) */}
+      {mode === 'camera' && (
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-20 left-4 text-white text-lg font-mono">
+            <div>Speed: 0 km/h</div>
+            <div>Distance: 0.0 km</div>
+            <div>Time: 00:00:00</div>
+          </div>
+        </div>
+      )}
+
+      {/* Control Bar */}
+      <div className="absolute bottom-0 left-0 right-0 z-50 bg-black/50 p-4">
+        <div className="flex justify-between items-center">
+          {/* Mode Toggle */}
+          <button
+            onClick={() => setMode(mode === 'camera' ? 'map' : 'camera')}
+            className="btn-secondary"
+          >
+            {mode === 'camera' ? '??? Map' : '?? Camera'}
+          </button>
+
+          {/* Record Button */}
+          <button
+            onClick={() => setIsRecording(!isRecording)}
+            className={isRecording ? 'btn-recording' : 'btn-primary'}
+          >
+            {isRecording ? '?? Stop' : '?? Record'}
+          </button>
+
+          {/* Fit Button (Map mode only) */}
+          {mode === 'map' && (
+            <button className="btn-secondary">
+              ?? Fit
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* PWA Installation Prompt */}
+      <div className="absolute top-16 right-4 z-40">
+        <div className="bg-blue-600 text-white text-xs px-2 py-1 rounded">
+          PWA Ready ?
+        </div>
+      </div>
+    </div>
   )
 }
 

@@ -1,7 +1,89 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      manifest: {
+        name: 'RoadTrip GPS Tracker',
+        short_name: 'RoadTrip',
+        description: 'Mobile-first GPS trip recording with live HUD overlay and real-time map visualization',
+        theme_color: '#2563eb',
+        background_color: '#ffffff',
+        display: 'standalone',
+        orientation: 'portrait-primary',
+        start_url: '/',
+        scope: '/',
+        icons: [
+          {
+            src: 'pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable'
+          }
+        ],
+        categories: ['navigation', 'travel', 'utilities'],
+        shortcuts: [
+          {
+            name: 'Start Recording',
+            short_name: 'Record',
+            description: 'Start GPS trip recording',
+            url: '/?action=record',
+            icons: [{ src: 'pwa-192x192.png', sizes: '192x192' }]
+          }
+        ]
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/demotiles\.maplibre\.org\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'maplibre-tiles',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
+              }
+            }
+          }
+        ]
+      }
+    })
+  ],
+  server: {
+    // HTTPS for geolocation testing
+    https: false, // Set to true for production testing
+    host: true, // Allow external connections for mobile testing
+    port: 3000,
+    strictPort: true
+  },
+  build: {
+    target: 'esnext',
+    minify: 'esbuild',
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          maplibre: ['maplibre-gl']
+        }
+      }
+    }
+  }
 })
