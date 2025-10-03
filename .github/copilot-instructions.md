@@ -303,6 +303,7 @@ async function setMode(mode) {
 4. **Performance**: Monitor requestAnimationFrame usage
 5. **MapLibre Loading**: Verify CDN connectivity and fallback to canvas
 6. **Mode Switching**: Ensure CSS classes are applied correctly for .mode-map/.mode-camera
+7. **Hanging terminal output**: Append `; echo ""`` to commands to ensure a newline is sent after execution, preventing terminal hangs.
 
 ### Development Server
 
