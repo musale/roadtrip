@@ -63,3 +63,6 @@ Thumbs.db
 # Package manager lockfiles (keep one)
 # yarn.lock
 # pnpm-lock.yaml
+.playwright-mcp
+package-lock.json
+.vs
