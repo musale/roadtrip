@@ -1,114 +1,52 @@
-import { useState } from 'react'
+import React from 'react'
 import './App.css'
 
-// Import our Phase 2 hooks
-import useTripRecorder from './hooks/useTripRecorder'
-import useGeolocation from './hooks/useGeolocation'
-import useLocalStorage from './hooks/useLocalStorage'
-import useWakeLock from './hooks/useWakeLock'
+// Import context and components
+import { AppProvider, useAppContext } from './context/AppContext'
+import LiveHUD from './components/LiveHUD'
+import MapView from './components/MapView'
+import CameraView from './components/CameraView'
 
-function App() {
-  const [mode, setMode] = useState('camera')
-
-  // Phase 2: Core Data Layer Hooks
+// Main App component (wrapped by context)
+function AppContent() {
   const {
-    currentTrip,
-    isTracking,
-    stats,
-    startTrip,
-    stopTrip,
-    exportGPX,
-    exportGeoJSON
-  } = useTripRecorder()
+    state,
+    tripRecorder,
+    actions,
+    utils
+  } = useAppContext();
 
-  const {
-    position,
-    error: gpsError,
-    permission,
-    accuracy,
-    isSupported: gpsSupported,
-    isAccurate,
-    requestPermission
-  } = useGeolocation()
-
-  const {
-    trips,
-    addTrip,
-    getStorageStats
-  } = useLocalStorage()
-
-  const {
-    isSupported: wakeLockSupported,
-    isActive: wakeLockActive,
-    requestWakeLock,
-    releaseWakeLock
-  } = useWakeLock()
+  const { mode, isLoading, error, followMode } = state;
+  const { currentTrip, stats, isRecording } = tripRecorder;
 
   // Handle recording toggle
   const handleRecordToggle = async () => {
-    if (isTracking) {
-      const finishedTrip = stopTrip()
-      if (wakeLockActive) {
-        await releaseWakeLock()
+    try {
+      if (isRecording) {
+        await actions.stopRecording();
+      } else {
+        await actions.startRecording();
       }
-      if (finishedTrip) {
-        addTrip(finishedTrip)
-      }
-    } else {
-      // Request GPS permission if needed
-      if (permission !== 'granted') {
-        try {
-          await requestPermission()
-        } catch (err) {
-          console.error('GPS permission denied:', err)
-          return
-        }
-      }
-      
-      startTrip()
-      
-      // Request wake lock during recording
-      if (wakeLockSupported) {
-        try {
-          await requestWakeLock()
-        } catch (err) {
-          console.warn('Wake lock failed:', err)
-        }
-      }
+    } catch (err) {
+      console.error('Recording toggle failed:', err);
     }
-  }
+  };
 
-  // Format time duration
-  const formatDuration = (ms) => {
-    const seconds = Math.floor(ms / 1000)
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
-    const secs = seconds % 60
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
+  // Handle mode switching
+  const handleModeSwitch = () => {
+    const newMode = mode === 'camera' ? 'map' : 'camera';
+    actions.setMode(newMode);
+  };
 
-  // Format distance
-  const formatDistance = (meters) => {
-    return (meters / 1000).toFixed(2)
-  }
+  // Handle fit bounds (map mode)
+  const handleFitBounds = () => {
+    if (window.roadtripMapFitBounds) {
+      window.roadtripMapFitBounds();
+    }
+  };
 
-  // Format speed
-  const formatSpeed = (kph) => {
-    return kph.toFixed(1)
-  }
-
-  // Get GPS status
-  const getGPSStatus = () => {
-    if (!gpsSupported) return { text: 'Not Supported', color: 'text-red-400' }
-    if (gpsError) return { text: 'Error', color: 'text-red-400' }
-    if (permission === 'denied') return { text: 'Denied', color: 'text-red-400' }
-    if (permission === 'granted' && isAccurate) return { text: 'Good', color: 'text-green-400' }
-    if (permission === 'granted') return { text: 'Poor', color: 'text-yellow-400' }
-    return { text: 'Unknown', color: 'text-gray-400' }
-  }
-
-  const gpsStatus = getGPSStatus()
-  const storageStats = getStorageStats()
+  // Get GPS status for display
+  const gpsStatus = utils.getGPSStatusDisplay();
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${mode === 'camera' ? 'mode-camera' : 'mode-map'}`}>
@@ -117,7 +55,9 @@ function App() {
         <div className="flex justify-between items-center">
           <div className="text-sm">
             GPS: <span className={gpsStatus.color}>{gpsStatus.text}</span>
-            {accuracy && <span className="text-xs ml-1">({Math.round(accuracy)}m)</span>}
+            {state.gpsStatus.accuracy && (
+              <span className="text-xs ml-1">({Math.round(state.gpsStatus.accuracy)}m)</span>
+            )}
           </div>
           <div className="text-lg font-mono">
             RoadTrip
@@ -128,77 +68,61 @@ function App() {
         </div>
         
         {/* Recording Status */}
-        {isTracking && (
+        {isRecording && (
           <div className="mt-2 text-center">
             <div className="inline-flex items-center gap-2 bg-red-600/80 px-3 py-1 rounded-full text-xs">
               <div className="w-2 h-2 bg-red-300 rounded-full animate-pulse"></div>
               RECORDING
-              {wakeLockActive && <span className="text-xs">• Screen Lock On</span>}
+            </div>
+          </div>
+        )}
+        
+        {/* Error Display */}
+        {error && (
+          <div className="mt-2 text-center">
+            <div className="inline-flex items-center gap-2 bg-yellow-600/80 px-3 py-1 rounded-full text-xs">
+              <span>??</span>
+              {error}
+              <button 
+                onClick={actions.clearError}
+                className="ml-2 text-white hover:text-gray-300"
+              >
+                ×
+              </button>
             </div>
           </div>
         )}
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 relative w-full h-screen">
         {mode === 'camera' ? (
-          <div className="text-white text-center">
-            <div className="text-6xl mb-4">??</div>
-            <p>Camera View</p>
-            <p className="text-sm opacity-75">Grant camera permission to start</p>
+          <>
+            {/* Camera View */}
+            <CameraView className="absolute inset-0" />
             
-            {/* Debug Info */}
-            <div className="mt-4 text-xs opacity-60">
-              <div>Trips Stored: {storageStats.tripCount}</div>
-              <div>Data Size: {storageStats.sizeInKB} KB</div>
-              {position && (
-                <div>
-                  Lat: {position.coords.latitude.toFixed(6)}<br/>
-                  Lon: {position.coords.longitude.toFixed(6)}
-                </div>
-              )}
-            </div>
-          </div>
+            {/* Live HUD Overlay */}
+            <LiveHUD 
+              visible={true}
+              className="absolute inset-0 pointer-events-none"
+            />
+          </>
         ) : (
-          <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-            <div className="text-gray-600 text-center">
-              <div className="text-6xl mb-4">???</div>
-              <p>Map View</p>
-              <p className="text-sm opacity-75">MapLibre will render here</p>
-              
-              {/* Current Trip Points Debug */}
-              {currentTrip && currentTrip.points.length > 0 && (
-                <div className="mt-4 text-xs">
-                  <div>Trip Points: {currentTrip.points.length}</div>
-                  <div>Latest Point: {new Date(currentTrip.points[currentTrip.points.length - 1].timestamp).toLocaleTimeString()}</div>
-                </div>
-              )}
-            </div>
-          </div>
+          <>
+            {/* Map View */}
+            <MapView className="absolute inset-0" />
+          </>
         )}
       </div>
-
-      {/* HUD Overlay (Camera mode only) */}
-      {mode === 'camera' && (
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-20 left-4 text-white text-lg font-mono">
-            <div>Speed: {formatSpeed(stats.currentSpeedKph)} km/h</div>
-            <div>Distance: {formatDistance(stats.distanceMeters)} km</div>
-            <div>Time: {formatDuration(stats.durationMs)}</div>
-            {stats.maxSpeedKph > 0 && (
-              <div>Max: {formatSpeed(stats.maxSpeedKph)} km/h</div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Control Bar */}
       <div className="absolute bottom-0 left-0 right-0 z-50 bg-black/50 p-4">
         <div className="flex justify-between items-center">
           {/* Mode Toggle */}
           <button
-            onClick={() => setMode(mode === 'camera' ? 'map' : 'camera')}
+            onClick={handleModeSwitch}
             className="btn-secondary"
+            disabled={isLoading}
           >
             {mode === 'camera' ? '??? Map' : '?? Camera'}
           </button>
@@ -206,30 +130,72 @@ function App() {
           {/* Record Button */}
           <button
             onClick={handleRecordToggle}
-            disabled={!gpsSupported || gpsError}
-            className={`${isTracking ? 'btn-recording' : 'btn-primary'} ${!gpsSupported || gpsError ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!state.gpsStatus.supported || state.gpsStatus.error || isLoading}
+            className={`${isRecording ? 'btn-recording' : 'btn-primary'} ${
+              !state.gpsStatus.supported || state.gpsStatus.error || isLoading 
+                ? 'opacity-50 cursor-not-allowed' 
+                : ''
+            }`}
           >
-            {isTracking ? '?? Stop' : '?? Record'}
+            {isLoading ? (
+              <span>?</span>
+            ) : isRecording ? (
+              <span>?? Stop</span>
+            ) : (
+              <span>?? Record</span>
+            )}
           </button>
 
-          {/* Fit Button (Map mode only) */}
-          {mode === 'map' && (
-            <button className="btn-secondary">
+          {/* Mode-specific controls */}
+          {mode === 'map' ? (
+            <button 
+              onClick={handleFitBounds}
+              className="btn-secondary"
+              disabled={!currentTrip || currentTrip.points.length === 0}
+              title="Fit map to trip"
+            >
               ?? Fit
             </button>
+          ) : (
+            <div className="w-16"> {/* Spacer for layout consistency */}
+            </div>
           )}
         </div>
         
-        {/* Debug Export Buttons */}
-        {currentTrip && currentTrip.points.length > 0 && (
+        {/* Trip Statistics Bar */}
+        {isRecording && (
+          <div className="mt-3 flex justify-center gap-4 text-white text-sm">
+            <div className="text-center">
+              <div className="text-xs opacity-75">Speed</div>
+              <div className="font-mono">{utils.formatSpeed(stats.currentSpeedKph)} km/h</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs opacity-75">Distance</div>
+              <div className="font-mono">{utils.formatDistance(stats.distanceMeters)} km</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs opacity-75">Time</div>
+              <div className="font-mono">{utils.formatDuration(stats.durationMs)}</div>
+            </div>
+            {stats.maxSpeedKph > 0 && (
+              <div className="text-center">
+                <div className="text-xs opacity-75">Max</div>
+                <div className="font-mono">{utils.formatSpeed(stats.maxSpeedKph)} km/h</div>
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Debug Export Buttons (Development only) */}
+        {currentTrip && currentTrip.points.length > 0 && process.env.NODE_ENV === 'development' && (
           <div className="mt-2 flex gap-2 justify-center">
             <button 
               onClick={() => {
                 try {
-                  const gpx = exportGPX()
-                  console.log('GPX Export:', gpx.substring(0, 200) + '...')
+                  const gpx = actions.exportTrip('gpx');
+                  console.log('GPX Export:', gpx.substring(0, 200) + '...');
                 } catch (err) {
-                  console.error('GPX Export Error:', err)
+                  console.error('GPX Export Error:', err);
                 }
               }}
               className="text-xs bg-blue-600 text-white px-2 py-1 rounded"
@@ -239,15 +205,27 @@ function App() {
             <button 
               onClick={() => {
                 try {
-                  const geoJSON = exportGeoJSON()
-                  console.log('GeoJSON Export:', geoJSON)
+                  const geoJSON = actions.exportTrip('geojson');
+                  console.log('GeoJSON Export:', geoJSON);
                 } catch (err) {
-                  console.error('GeoJSON Export Error:', err)
+                  console.error('GeoJSON Export Error:', err);
                 }
               }}
               className="text-xs bg-green-600 text-white px-2 py-1 rounded"
             >
               Test GeoJSON
+            </button>
+            <button 
+              onClick={() => {
+                try {
+                  actions.downloadTrip('gpx');
+                } catch (err) {
+                  console.error('Download GPX Error:', err);
+                }
+              }}
+              className="text-xs bg-purple-600 text-white px-2 py-1 rounded"
+            >
+              Download GPX
             </button>
           </div>
         )}
@@ -259,8 +237,34 @@ function App() {
           PWA Ready ?
         </div>
       </div>
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-black/80 text-white px-6 py-4 rounded-lg text-center">
+            <div className="text-2xl mb-2">?</div>
+            <div>Loading...</div>
+          </div>
+        </div>
+      )}
+
+      {/* Accessibility announcements */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {isRecording && `Recording trip. Current speed ${utils.formatSpeed(stats.currentSpeedKph)} kilometers per hour.`}
+        {error && `Error: ${error}`}
+        {mode && `Switched to ${mode} mode`}
+      </div>
     </div>
-  )
+  );
+}
+
+// Main App component with Provider
+function App() {
+  return (
+    <AppProvider>
+      <AppContent />
+    </AppProvider>
+  );
 }
 
 export default App
