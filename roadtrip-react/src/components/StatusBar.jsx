@@ -3,10 +3,10 @@
  * Displays GPS status, recording state, mode, and errors with glassmorphism
  */
 
-import React from 'react';
+import React, { memo } from 'react';
 import { useAppContext } from '../context/AppContext';
 
-const StatusBar = ({ className = '' }) => {
+const StatusBar = memo(({ className = '' }) => {
   const {
     state,
     tripRecorder,
@@ -140,6 +140,8 @@ const StatusBar = ({ className = '' }) => {
       </div>
     </div>
   );
-};
+});
+
+StatusBar.displayName = 'StatusBar';
 
 export default StatusBar;

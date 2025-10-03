@@ -77,13 +77,55 @@ export default defineConfig({
     target: 'esnext',
     minify: 'esbuild',
     sourcemap: true,
+    cssCodeSplit: true,
+    reportCompressedSize: true,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          maplibre: ['maplibre-gl']
-        }
+        manualChunks: (id) => {
+          // Vendor chunks
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom')) {
+              return 'vendor';
+            }
+            if (id.includes('maplibre-gl')) {
+              return 'maplibre';
+            }
+            // Other node_modules go to vendor-misc
+            return 'vendor-misc';
+          }
+          
+          // Component chunks
+          if (id.includes('/components/')) {
+            if (id.includes('MapView')) {
+              return 'map-components';
+            }
+            if (id.includes('LiveHUD') || id.includes('CameraView')) {
+              return 'hud-components';
+            }
+            return 'ui-components';
+          }
+          
+          // Hook chunks
+          if (id.includes('/hooks/')) {
+            return 'hooks';
+          }
+          
+          // Context and utilities
+          if (id.includes('/context/') || id.includes('/utils/')) {
+            return 'core';
+          }
+        },
+        // Optimize chunk naming
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]',
       }
-    }
+    },
+    // Optimize dependencies
+    commonjsOptions: {
+      include: [/node_modules/],
+      transformMixedEsModules: true,
+    },
   }
 })

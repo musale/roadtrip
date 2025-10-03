@@ -3,9 +3,9 @@
  * Provides consistent styling with Neon Velocity design system
  */
 
-import React from 'react';
+import React, { memo } from 'react';
 
-const Button = ({ 
+const Button = memo(({ 
   children,
   variant = 'primary', // 'primary' | 'secondary' | 'danger'
   size = 'md', // 'sm' | 'md' | 'lg'
@@ -112,6 +112,8 @@ const Button = ({
       {children}
     </button>
   );
-};
+});
+
+Button.displayName = 'Button';
 
 export default Button;

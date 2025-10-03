@@ -3,9 +3,9 @@
  * Optimized for toolbar and quick actions with proper touch targets
  */
 
-import React from 'react';
+import React, { memo } from 'react';
 
-const IconButton = ({ 
+const IconButton = memo(({ 
   children,
   icon,
   variant = 'secondary', // 'primary' | 'secondary' | 'danger' | 'ghost'
@@ -116,6 +116,8 @@ const IconButton = ({
       {loading ? spinner : (icon || children)}
     </button>
   );
-};
+});
+
+IconButton.displayName = 'IconButton';
 
 export default IconButton;
