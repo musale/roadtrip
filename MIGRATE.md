@@ -17,7 +17,7 @@
 ### Initial Setup
 
 - [ ] Initialize new Vite + React project structure
-  - [ ] Run `npm create vite@latest roadtrip-react -- --template react`
+  - [x] Run `npm create vite@latest roadtrip-react -- --template react`
   - [ ] Move new project files to root or create parallel structure
   - [ ] Update `.gitignore` for Node.js/React project
 
