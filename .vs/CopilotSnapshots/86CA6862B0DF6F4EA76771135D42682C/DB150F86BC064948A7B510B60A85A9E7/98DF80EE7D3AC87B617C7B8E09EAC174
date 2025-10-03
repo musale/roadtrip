@@ -1,0 +1,237 @@
+﻿@import "tailwindcss";
+
+/* Neon Velocity Design System Tokens */
+:root {
+  /** Color Primitives (Neon Velocity) */
+  --nv-black: #0d0d0d;
+  --nv-graphite: #3a3a3a;
+  --nv-white: #f5f7fb;
+
+  --nv-cyan-50: #e9fffb;
+  --nv-cyan-100: #c6fff6;
+  --nv-cyan-200: #8ffce9;
+  --nv-cyan-300: #4ef9e0;
+  --nv-cyan-400: #1ff9d9;
+  --nv-cyan-500: #00f5d4; /* core neon */
+  --nv-cyan-600: #00c6ac;
+  --nv-cyan-700: #009c8a;
+
+  --nv-magenta-400: #ff55bd;
+  --nv-magenta-500: #ff1b9b; /* secondary neon */
+  --nv-magenta-600: #d40c7f;
+
+  --nv-yellow-500: #ffe66d; /* alert/attention */
+  --nv-green-500: #3ef08c; /* success */
+  --nv-red-500: #ff4d4f; /* error */
+
+  /** Elevation & Shadows */
+  --nv-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --nv-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --nv-shadow-3: 0 10px 30px rgba(0, 0, 0, 0.55);
+
+  /** Typography primitives */
+  --nv-font-display: "Orbitron", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  --nv-font-body: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  --nv-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /** Spacing & Radii */
+  --nv-space-1: 4px;
+  --nv-space-2: 8px;
+  --nv-space-3: 12px;
+  --nv-space-4: 16px;
+  --nv-space-5: 20px;
+  --nv-space-6: 24px;
+  --nv-space-8: 32px;
+  --nv-space-10: 40px;
+  --nv-radius-sm: 8px;
+  --nv-radius-md: 14px;
+  --nv-radius-lg: 20px;
+  --nv-radius-full: 999px;
+
+  /** Motion primitives */
+  --nv-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --nv-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --nv-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --nv-ease-glow: cubic-bezier(0.22, 1, 0.36, 1); /* elastic-ish for neon pulses */
+
+  --nv-dur-fast: 120ms;
+  --nv-dur-med: 220ms;
+  --nv-dur-slow: 360ms;
+
+  /** Layout */
+  --nv-container-w: 1200px;
+  
+  /** Focus */
+  --focus-ring: 0 0 0 3px rgba(0, 245, 212, 0.2), 0 0 0 2px var(--nv-cyan-500);
+}
+
+/* Dark theme baseline (default) */
+:root {
+  --nv-bg: var(--nv-black);
+  --nv-surface: #121212;
+  --nv-surface-2: #171717;
+  --nv-border: #2b2b2b;
+  --nv-text: #e9f5f3;
+  --nv-muted: #9ca3af;
+  
+  /* Semantic token mapping */
+  --color-brand: var(--nv-cyan-500);
+  --color-brand-fg-on-dark: #051a17; /* contrast on cyan glow */
+  --color-accent: var(--nv-magenta-500);
+
+  /* Text */
+  --color-text-primary: var(--nv-text);
+  --color-text-muted: var(--nv-muted);
+  --color-text-inverse: #0b0b0b;
+
+  /* Surfaces */
+  --color-bg: var(--nv-bg);
+  --color-surface: var(--nv-surface);
+  --color-surface-strong: var(--nv-surface-2);
+  --color-border: var(--nv-border);
+
+  /* States */
+  --color-success: var(--nv-green-500);
+  --color-warning: var(--nv-yellow-500);
+  --color-danger: var(--nv-red-500);
+}
+
+/* Light theme (optional) */
+:root.light {
+  --nv-bg: #f8fbfb;
+  --nv-surface: #ffffff;
+  --nv-surface-2: #f4f7f7;
+  --nv-border: #e5e7eb;
+  --nv-text: #0c0e10;
+  --nv-muted: #556166;
+  
+  /* Update semantic tokens */
+  --color-bg: var(--nv-bg);
+  --color-surface: var(--nv-surface);
+  --color-surface-strong: var(--nv-surface-2);
+  --color-border: var(--nv-border);
+  --color-text-primary: var(--nv-text);
+  --color-text-muted: var(--nv-muted);
+  --color-text-inverse: #ffffff;
+}
+
+/* Base styles */
+body {
+  @apply text-text bg-bg;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile */
+  
+  /* Mobile optimizations */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  
+  /* Text rendering */
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: var(--nv-font-body);
+}
+
+/* Focus visible ring */
+.focus-visible:focus-visible {
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+/* Neon borders utility */
+.nv-neon {
+  box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.35), 0 0 22px rgba(0, 245, 212, 0.16) inset;
+}
+.nv-neon-strong {
+  box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.6), 0 0 48px rgba(0, 245, 212, 0.2) inset;
+}
+
+/* Elevated surfaces */
+.nv-surface {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+}
+
+/* Button styles updated with Neon Velocity */
+.btn-primary {
+  @apply focus-visible rounded-md px-5 py-3 font-display text-[15px] tracking-wide;
+  @apply text-bg bg-brand nv-neon-strong shadow-nv2 transition-[transform,box-shadow] duration-fast ease-nv;
+  @apply hocus:-translate-y-[1px] active:translate-y-0 disabled:opacity-50 disabled:pointer-events-none;
+  @apply min-h-[44px] min-w-[44px]; /* Touch target minimum */
+}
+
+.btn-recording {
+  @apply focus-visible rounded-md px-5 py-3 font-display text-[15px] tracking-wide;
+  @apply text-bg bg-state-danger shadow-nv2 transition duration-fast ease-nv hocus:opacity-90;
+  @apply min-h-[44px] min-w-[44px];
+  @apply animate-glowPulse;
+}
+
+.btn-secondary {
+  @apply focus-visible rounded-md px-5 py-3 font-display text-[15px] tracking-wide;
+  @apply text-text border border-border bg-surface/40 shadow-nv1 transition duration-fast ease-nv;
+  @apply hocus:border-brand hocus:text-brand;
+  @apply min-h-[44px] min-w-[44px];
+}
+
+/* Canvas styles for HUD */
+.hud-canvas {
+  @apply absolute inset-0 pointer-events-none;
+  image-rendering: pixelated; /* Sharp pixel rendering */
+}
+
+/* Map container styles */
+.map-container {
+  @apply w-full h-full relative;
+}
+
+/* Mode-specific layouts with neon theming */
+.mode-camera {
+  @apply bg-bg;
+}
+
+.mode-map {
+  @apply bg-surface;
+}
+
+/* Accessibility improvements */
+.sr-only {
+  @apply absolute w-px h-px p-0 -m-px overflow-hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* High DPI canvas support */
+canvas {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: pixelated;
+}
+
+/* Remove focus outlines on mobile - replaced with neon focus rings */
+button, input, select, textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Landscape mode optimizations */
+@media (orientation: landscape) {
+  .landscape-optimize {
+    @apply h-screen;
+  }
+}

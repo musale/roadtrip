@@ -1,19 +1,68 @@
-# Build and Release Folders
-bin-debug/
-bin-release/
-[Oo]bj/
-[Bb]in/
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Other files and folders
-.settings/
+# Dependencies
+node_modules
+.pnpm
 
-# Executables
-*.swf
-*.air
-*.ipa
-*.apk
+# Build outputs
+dist
+dist-ssr
+*.local
 
-# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
-# should NOT be excluded as they contain compiler settings and other important
-# information for Eclipse / Flash Builder.
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# PWA service worker cache
+sw.js
+workbox-*.js
+
+# Testing
+coverage
+.nyc_output
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# TypeScript
+*.tsbuildinfo
+
+# ESLint cache
+.eslintcache
+
+# Prettier cache
+.cache
+
+# Package manager lockfiles (keep one)
+# yarn.lock
+# pnpm-lock.yaml
 .playwright-mcp
+package-lock.json
+.vs

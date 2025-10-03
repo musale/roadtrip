@@ -1,0 +1,275 @@
+/**
+ * LiveHUD - Canvas-based real-time statistics display component
+ * Provides 60fps animated overlay with trip statistics
+ */
+
+import React, { useRef, useEffect, useCallback, useState } from 'react';
+import { useAppContext } from '../context/AppContext';
+
+const LiveHUD = ({ visible = true, className = "" }) => {
+  const canvasRef = useRef(null);
+  const animationRef = useRef(null);
+  const ctxRef = useRef(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+  
+  const { tripRecorder, utils } = useAppContext();
+  const { stats, currentTrip } = tripRecorder;
+
+  /**
+   * Initialize canvas with high-DPI support
+   */
+  const initCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+
+    // Set actual size in memory (scaled up for high-DPI)
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+
+    // Scale back down using CSS
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+
+    // Scale the drawing context so everything draws at the correct size
+    ctx.scale(dpr, dpr);
+
+    ctxRef.current = ctx;
+    
+    console.log('LiveHUD canvas initialized:', {
+      width: rect.width,
+      height: rect.height,
+      dpr,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height
+    });
+  }, []);
+
+  /**
+   * Draw HUD statistics on canvas
+   */
+  const drawHUD = useCallback(() => {
+    const ctx = ctxRef.current;
+    const canvas = canvasRef.current;
+    
+    if (!ctx || !canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
+
+    if (!visible) return;
+
+    // Configure text rendering for high contrast
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    
+    // Draw semi-transparent background for better readability
+    const bgPadding = 16;
+    const bgRadius = 12;
+    const bgWidth = 200;
+    const bgHeight = stats.maxSpeedKph > 0 ? 120 : 100;
+    
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.beginPath();
+    ctx.roundRect(bgPadding, bgPadding, bgWidth, bgHeight, bgRadius);
+    ctx.fill();
+
+    // Add neon border effect
+    ctx.strokeStyle = 'rgba(0, 245, 212, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(bgPadding, bgPadding, bgWidth, bgHeight, bgRadius);
+    ctx.stroke();
+
+    // Text styling
+    const textPadding = bgPadding + 12;
+    let yPos = textPadding + 8;
+    const lineHeight = 24;
+
+    // Speed display
+    ctx.font = 'bold 18px var(--nv-font-display, "Orbitron", monospace)';
+    ctx.fillStyle = '#00f5d4'; // Brand neon color
+    ctx.fillText('Speed:', textPadding, yPos);
+    
+    ctx.font = 'bold 16px var(--nv-font-mono, monospace)';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${utils.formatSpeed(stats.currentSpeedKph)} km/h`, textPadding + 80, yPos);
+    yPos += lineHeight;
+
+    // Distance display
+    ctx.font = 'bold 18px var(--nv-font-display, "Orbitron", monospace)';
+    ctx.fillStyle = '#00f5d4';
+    ctx.fillText('Distance:', textPadding, yPos);
+    
+    ctx.font = 'bold 16px var(--nv-font-mono, monospace)';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${utils.formatDistance(stats.distanceMeters)} km`, textPadding + 80, yPos);
+    yPos += lineHeight;
+
+    // Time display
+    ctx.font = 'bold 18px var(--nv-font-display, "Orbitron", monospace)';
+    ctx.fillStyle = '#00f5d4';
+    ctx.fillText('Time:', textPadding, yPos);
+    
+    ctx.font = 'bold 16px var(--nv-font-mono, monospace)';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(utils.formatDuration(stats.durationMs), textPadding + 80, yPos);
+    yPos += lineHeight;
+
+    // Max speed (only if we have data)
+    if (stats.maxSpeedKph > 0) {
+      ctx.font = 'bold 18px var(--nv-font-display, "Orbitron", monospace)';
+      ctx.fillStyle = '#ff1b9b'; // Accent color for max speed
+      ctx.fillText('Max:', textPadding, yPos);
+      
+      ctx.font = 'bold 16px var(--nv-font-mono, monospace)';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(`${utils.formatSpeed(stats.maxSpeedKph)} km/h`, textPadding + 80, yPos);
+    }
+
+    // Recording indicator
+    if (tripRecorder.isRecording) {
+      const recordingTime = Date.now();
+      const pulse = Math.abs(Math.sin(recordingTime * 0.005)); // Pulsing effect
+      
+      ctx.fillStyle = `rgba(255, 77, 79, ${0.8 + pulse * 0.2})`;
+      ctx.beginPath();
+      ctx.arc(width - 30, 30, 8, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      // Recording text
+      ctx.font = 'bold 12px var(--nv-font-display, "Orbitron", monospace)';
+      ctx.fillStyle = '#ff4d4f';
+      ctx.textAlign = 'right';
+      ctx.fillText('REC', width - 50, 25);
+      ctx.textAlign = 'left'; // Reset alignment
+    }
+  }, [visible, stats, tripRecorder.isRecording, utils]);
+
+  /**
+   * Animation loop using requestAnimationFrame
+   */
+  const animate = useCallback(() => {
+    drawHUD();
+    if (isAnimating) {
+      animationRef.current = requestAnimationFrame(animate);
+    }
+  }, [drawHUD, isAnimating]);
+
+  /**
+   * Start animation loop
+   */
+  const startAnimation = useCallback(() => {
+    if (!isAnimating) {
+      setIsAnimating(true);
+    }
+  }, [isAnimating]);
+
+  /**
+   * Stop animation loop
+   */
+  const stopAnimation = useCallback(() => {
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+    setIsAnimating(false);
+  }, []);
+
+  // Initialize canvas on mount and resize
+  useEffect(() => {
+    initCanvas();
+    
+    const handleResize = () => {
+      initCanvas();
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [initCanvas]);
+
+  // Start/stop animation based on recording state and visibility
+  useEffect(() => {
+    if (visible && tripRecorder.isRecording) {
+      startAnimation();
+    } else {
+      stopAnimation();
+    }
+  }, [visible, tripRecorder.isRecording, startAnimation, stopAnimation]);
+
+  // Run animation loop
+  useEffect(() => {
+    if (isAnimating) {
+      animationRef.current = requestAnimationFrame(animate);
+    }
+    
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [isAnimating, animate]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopAnimation();
+    };
+  }, [stopAnimation]);
+
+  // ARIA live region for accessibility
+  const announceStats = () => {
+    if (!tripRecorder.isRecording) return '';
+    
+    return `Speed ${utils.formatSpeed(stats.currentSpeedKph)} kilometers per hour, ` +
+           `Distance ${utils.formatDistance(stats.distanceMeters)} kilometers, ` +
+           `Time ${utils.formatDuration(stats.durationMs)}`;
+  };
+
+  return (
+    <div className={`relative ${className}`}>
+      {/* Canvas for HUD rendering */}
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 pointer-events-none w-full h-full"
+        style={{
+          imageRendering: 'pixelated'
+        }}
+        aria-hidden="true"
+      />
+      
+      {/* Accessibility: Screen reader announcements */}
+      <div
+        className="sr-only"
+        aria-live="polite"
+        aria-atomic="true"
+        role="status"
+      >
+        {announceStats()}
+      </div>
+      
+      {/* Fallback text display for screen readers or when canvas fails */}
+      <div className="sr-only">
+        <div>Current trip statistics:</div>
+        <div>Speed: {utils.formatSpeed(stats.currentSpeedKph)} km/h</div>
+        <div>Distance: {utils.formatDistance(stats.distanceMeters)} km</div>
+        <div>Duration: {utils.formatDuration(stats.durationMs)}</div>
+        {stats.maxSpeedKph > 0 && (
+          <div>Maximum speed: {utils.formatSpeed(stats.maxSpeedKph)} km/h</div>
+        )}
+        {tripRecorder.isRecording && <div>Currently recording trip</div>}
+      </div>
+    </div>
+  );
+};
+
+export default LiveHUD;
