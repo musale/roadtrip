@@ -1,9 +1,114 @@
 import { useState } from 'react'
 import './App.css'
 
+// Import our Phase 2 hooks
+import useTripRecorder from './hooks/useTripRecorder'
+import useGeolocation from './hooks/useGeolocation'
+import useLocalStorage from './hooks/useLocalStorage'
+import useWakeLock from './hooks/useWakeLock'
+
 function App() {
-  const [isRecording, setIsRecording] = useState(false)
   const [mode, setMode] = useState('camera')
+
+  // Phase 2: Core Data Layer Hooks
+  const {
+    currentTrip,
+    isTracking,
+    stats,
+    startTrip,
+    stopTrip,
+    exportGPX,
+    exportGeoJSON
+  } = useTripRecorder()
+
+  const {
+    position,
+    error: gpsError,
+    permission,
+    accuracy,
+    isSupported: gpsSupported,
+    isAccurate,
+    requestPermission
+  } = useGeolocation()
+
+  const {
+    trips,
+    addTrip,
+    getStorageStats
+  } = useLocalStorage()
+
+  const {
+    isSupported: wakeLockSupported,
+    isActive: wakeLockActive,
+    requestWakeLock,
+    releaseWakeLock
+  } = useWakeLock()
+
+  // Handle recording toggle
+  const handleRecordToggle = async () => {
+    if (isTracking) {
+      const finishedTrip = stopTrip()
+      if (wakeLockActive) {
+        await releaseWakeLock()
+      }
+      if (finishedTrip) {
+        addTrip(finishedTrip)
+      }
+    } else {
+      // Request GPS permission if needed
+      if (permission !== 'granted') {
+        try {
+          await requestPermission()
+        } catch (err) {
+          console.error('GPS permission denied:', err)
+          return
+        }
+      }
+      
+      startTrip()
+      
+      // Request wake lock during recording
+      if (wakeLockSupported) {
+        try {
+          await requestWakeLock()
+        } catch (err) {
+          console.warn('Wake lock failed:', err)
+        }
+      }
+    }
+  }
+
+  // Format time duration
+  const formatDuration = (ms) => {
+    const seconds = Math.floor(ms / 1000)
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // Format distance
+  const formatDistance = (meters) => {
+    return (meters / 1000).toFixed(2)
+  }
+
+  // Format speed
+  const formatSpeed = (kph) => {
+    return kph.toFixed(1)
+  }
+
+  // Get GPS status
+  const getGPSStatus = () => {
+    if (!gpsSupported) return { text: 'Not Supported', color: 'text-red-400' }
+    if (gpsError) return { text: 'Error', color: 'text-red-400' }
+    if (permission === 'denied') return { text: 'Denied', color: 'text-red-400' }
+    if (permission === 'granted' && isAccurate) return { text: 'Good', color: 'text-green-400' }
+    if (permission === 'granted') return { text: 'Poor', color: 'text-yellow-400' }
+    return { text: 'Unknown', color: 'text-gray-400' }
+  }
+
+  const gpsStatus = getGPSStatus()
+  const storageStats = getStorageStats()
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${mode === 'camera' ? 'mode-camera' : 'mode-map'}`}>
@@ -11,7 +116,8 @@ function App() {
       <div className="absolute top-0 left-0 right-0 z-50 bg-black/50 text-white p-4">
         <div className="flex justify-between items-center">
           <div className="text-sm">
-            GPS: <span className="text-green-400">Good</span>
+            GPS: <span className={gpsStatus.color}>{gpsStatus.text}</span>
+            {accuracy && <span className="text-xs ml-1">({Math.round(accuracy)}m)</span>}
           </div>
           <div className="text-lg font-mono">
             RoadTrip
@@ -20,6 +126,17 @@ function App() {
             Mode: <span className="capitalize">{mode}</span>
           </div>
         </div>
+        
+        {/* Recording Status */}
+        {isTracking && (
+          <div className="mt-2 text-center">
+            <div className="inline-flex items-center gap-2 bg-red-600/80 px-3 py-1 rounded-full text-xs">
+              <div className="w-2 h-2 bg-red-300 rounded-full animate-pulse"></div>
+              RECORDING
+              {wakeLockActive && <span className="text-xs">• Screen Lock On</span>}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main Content Area */}
@@ -29,6 +146,18 @@ function App() {
             <div className="text-6xl mb-4">??</div>
             <p>Camera View</p>
             <p className="text-sm opacity-75">Grant camera permission to start</p>
+            
+            {/* Debug Info */}
+            <div className="mt-4 text-xs opacity-60">
+              <div>Trips Stored: {storageStats.tripCount}</div>
+              <div>Data Size: {storageStats.sizeInKB} KB</div>
+              {position && (
+                <div>
+                  Lat: {position.coords.latitude.toFixed(6)}<br/>
+                  Lon: {position.coords.longitude.toFixed(6)}
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="w-full h-full bg-gray-200 flex items-center justify-center">
@@ -36,6 +165,14 @@ function App() {
               <div className="text-6xl mb-4">???</div>
               <p>Map View</p>
               <p className="text-sm opacity-75">MapLibre will render here</p>
+              
+              {/* Current Trip Points Debug */}
+              {currentTrip && currentTrip.points.length > 0 && (
+                <div className="mt-4 text-xs">
+                  <div>Trip Points: {currentTrip.points.length}</div>
+                  <div>Latest Point: {new Date(currentTrip.points[currentTrip.points.length - 1].timestamp).toLocaleTimeString()}</div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -45,9 +182,12 @@ function App() {
       {mode === 'camera' && (
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-20 left-4 text-white text-lg font-mono">
-            <div>Speed: 0 km/h</div>
-            <div>Distance: 0.0 km</div>
-            <div>Time: 00:00:00</div>
+            <div>Speed: {formatSpeed(stats.currentSpeedKph)} km/h</div>
+            <div>Distance: {formatDistance(stats.distanceMeters)} km</div>
+            <div>Time: {formatDuration(stats.durationMs)}</div>
+            {stats.maxSpeedKph > 0 && (
+              <div>Max: {formatSpeed(stats.maxSpeedKph)} km/h</div>
+            )}
           </div>
         </div>
       )}
@@ -65,10 +205,11 @@ function App() {
 
           {/* Record Button */}
           <button
-            onClick={() => setIsRecording(!isRecording)}
-            className={isRecording ? 'btn-recording' : 'btn-primary'}
+            onClick={handleRecordToggle}
+            disabled={!gpsSupported || gpsError}
+            className={`${isTracking ? 'btn-recording' : 'btn-primary'} ${!gpsSupported || gpsError ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            {isRecording ? '?? Stop' : '?? Record'}
+            {isTracking ? '?? Stop' : '?? Record'}
           </button>
 
           {/* Fit Button (Map mode only) */}
@@ -78,6 +219,38 @@ function App() {
             </button>
           )}
         </div>
+        
+        {/* Debug Export Buttons */}
+        {currentTrip && currentTrip.points.length > 0 && (
+          <div className="mt-2 flex gap-2 justify-center">
+            <button 
+              onClick={() => {
+                try {
+                  const gpx = exportGPX()
+                  console.log('GPX Export:', gpx.substring(0, 200) + '...')
+                } catch (err) {
+                  console.error('GPX Export Error:', err)
+                }
+              }}
+              className="text-xs bg-blue-600 text-white px-2 py-1 rounded"
+            >
+              Test GPX
+            </button>
+            <button 
+              onClick={() => {
+                try {
+                  const geoJSON = exportGeoJSON()
+                  console.log('GeoJSON Export:', geoJSON)
+                } catch (err) {
+                  console.error('GeoJSON Export Error:', err)
+                }
+              }}
+              className="text-xs bg-green-600 text-white px-2 py-1 rounded"
+            >
+              Test GeoJSON
+            </button>
+          </div>
+        )}
       </div>
 
       {/* PWA Installation Prompt */}
