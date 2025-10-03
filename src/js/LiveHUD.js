@@ -48,6 +48,21 @@ function compassFromDegrees(degrees) {
   return directions[index];
 }
 
+// Polyfill for roundRect if not available
+function addRoundRectPolyfill(ctx) {
+  if (!ctx.roundRect) {
+    ctx.roundRect = function(x, y, width, height, radius) {
+      this.beginPath();
+      this.moveTo(x + radius, y);
+      this.arcTo(x + width, y, x + width, y + height, radius);
+      this.arcTo(x + width, y + height, x, y + height, radius);
+      this.arcTo(x, y + height, x, y, radius);
+      this.arcTo(x, y, x + width, y, radius);
+      this.closePath();
+    };
+  }
+}
+
 /**
  * LiveHUD Component Class
  * Renders real-time trip statistics on a canvas overlay
@@ -106,56 +121,80 @@ class LiveHUD {
     this._setupResizeHandler();
   }
   
-  /**
-   * Pre-compute font configurations to avoid allocations in render loop
+    /**
+   * Initialize font configuration for Apple-inspired design
+   * Optimized for mobile responsiveness and proper text fitting
+   * @private
    */
   _initializeFonts() {
-    const baseSize = Math.min(this.width, this.height) / 20;
-    const scaleFactor = this.dpr;
+    // More conservative base font size for mobile
+    const baseFontSize = Math.max(12, Math.min(this.width, this.height) * 0.024);
     
     this.fonts = {
-      speedLarge: `bold ${Math.round(baseSize * 2.5 * scaleFactor)}px system-ui, -apple-system, sans-serif`,
-      medium: `bold ${Math.round(baseSize * 1.2 * scaleFactor)}px system-ui, -apple-system, sans-serif`,
-      small: `bold ${Math.round(baseSize * 0.8 * scaleFactor)}px system-ui, -apple-system, sans-serif`,
-      label: `${Math.round(baseSize * 0.6 * scaleFactor)}px system-ui, -apple-system, sans-serif`
+      // Primary metric values - sized to fit containers
+      valueXLarge: `700 ${baseFontSize * 2.2}px -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif`,
+      valueLarge: `600 ${baseFontSize * 1.6}px -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif`,
+      valueMedium: `600 ${baseFontSize * 1.3}px -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif`,
+      // Labels - subtle, consistent
+      label: `500 ${baseFontSize * 0.7}px -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif`,
+      labelSmall: `400 ${baseFontSize * 0.6}px -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif`
     };
   }
   
   /**
-   * Calculate responsive layout positions
+   * Calculate Apple-inspired layout with safe areas and edge positioning
+   * Optimized for mobile devices with proper card sizing and alignment
+   * @private
    */
   _calculateLayout() {
-    const margin = Math.min(this.width, this.height) * 0.05;
-    const safeMargin = margin * this.dpr;
-    const lineHeight = Math.min(this.width, this.height) * 0.08 * this.dpr;
+    // Responsive safe areas based on screen size
+    const isMobile = this.width < 768;
+    const topBarHeight = isMobile ? Math.max(90, this.height * 0.14) : Math.max(100, this.height * 0.12);
+    const bottomBarHeight = isMobile ? Math.max(100, this.height * 0.15) : Math.max(140, this.height * 0.18);
+    const safeHorizontal = Math.max(16, this.width * 0.04);
+    
+    // Calculate responsive card dimensions
+    const cardWidth = Math.min(140, (this.width - safeHorizontal * 3) / 2); // Two cards per row with spacing
+    const cardHeight = isMobile ? 70 : 80;
+    
+    // Position HUD elements in grid layout for mobile
+    const availableHeight = this.height - topBarHeight - bottomBarHeight;
+    const middleStart = topBarHeight + (availableHeight * 0.05); // 5% buffer from top bar
+    const middleEnd = this.height - bottomBarHeight - (availableHeight * 0.05); // 5% buffer from bottom bar
     
     this.layout = {
-      margin: safeMargin,
-      lineHeight,
-      // Left column - main stats
-      speed: { 
-        x: safeMargin, 
-        y: safeMargin * 2 
+      // Top row - Speed and Time side by side
+      speed: {
+        x: safeHorizontal,
+        y: middleStart,
+        containerWidth: cardWidth,
+        containerHeight: cardHeight
       },
-      time: { 
-        x: safeMargin, 
-        y: safeMargin * 2 + lineHeight * 1.8 
+      time: {
+        x: this.width - safeHorizontal - cardWidth,
+        y: middleStart,
+        containerWidth: cardWidth,
+        containerHeight: cardHeight
       },
-      distance: { 
-        x: safeMargin, 
-        y: safeMargin * 2 + lineHeight * 3.2 
+      // Bottom row - Distance and Heading side by side
+      distance: {
+        x: safeHorizontal,
+        y: middleEnd - cardHeight,
+        containerWidth: cardWidth,
+        containerHeight: cardHeight
       },
-      // Right side - heading
-      heading: { 
-        x: this.width * this.dpr - safeMargin, 
-        y: safeMargin * 2 
+      heading: {
+        x: this.width - safeHorizontal - cardWidth,
+        y: middleEnd - cardHeight,
+        containerWidth: cardWidth,
+        containerHeight: cardHeight
       },
-      // Bottom - VU meter
+      // VU meter spans width
       vu: { 
-        x: safeMargin, 
-        y: this.height * this.dpr - safeMargin * 3,
-        width: Math.min(this.width * 0.4, 200) * this.dpr,
-        height: 16 * this.dpr
+        x: safeHorizontal, 
+        y: middleEnd - 20,
+        width: this.width - (safeHorizontal * 2),
+        height: 16
       }
     };
   }
@@ -214,6 +253,9 @@ class LiveHUD {
       alpha: true,
       desynchronized: true // Better performance on some devices
     });
+    
+    // Add roundRect polyfill if needed
+    addRoundRectPolyfill(this.ctx);
     
     this._resizeCanvas();
   }
@@ -300,7 +342,7 @@ class LiveHUD {
   }
   
   /**
-   * Render single frame
+   * Render single frame with Apple-inspired design
    * @private
    */
   _renderFrame(timestamp) {
@@ -315,7 +357,7 @@ class LiveHUD {
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     
-    // Draw background if provided (compositing mode)
+    // Draw background if provided
     if (this.backgroundSrc) {
       try {
         this.ctx.drawImage(this.backgroundSrc, 0, 0, this.canvas.width, this.canvas.height);
@@ -326,112 +368,163 @@ class LiveHUD {
     
     this.ctx.restore();
     
-    // Set up text shadow for legibility
-    this.ctx.shadowColor = this.theme.shadow;
-    this.ctx.shadowBlur = 8;
-    this.ctx.shadowOffsetX = 2;
-    this.ctx.shadowOffsetY = 2;
-    
-    // Render HUD elements
-    this._renderSpeed();
-    this._renderTime();
-    this._renderDistance();
+    // Render HUD elements with modern design
+    this._renderMetricCard('speed');
+    this._renderMetricCard('time');
+    this._renderMetricCard('distance');
     
     if (this.showHeading) {
-      this._renderHeading();
+      this._renderMetricCard('heading');
     }
     
     if (this.showVU) {
       this._renderVUMeter();
     }
-    
-    // Clear shadow for next frame
-    this.ctx.shadowColor = 'transparent';
-    this.ctx.shadowBlur = 0;
-    this.ctx.shadowOffsetX = 0;
-    this.ctx.shadowOffsetY = 0;
   }
   
   /**
-   * Render speed display
+   * Render a metric card with Apple-inspired design
    * @private
    */
-  _renderSpeed() {
+  _renderMetricCard(type) {
+    const layout = this.layout[type];
+    if (!layout) return;
+    
+    // Draw semi-transparent background with rounded corners
+    this.ctx.save();
+    
+    // Create rounded rectangle background
+    const padding = 12;
+    const radius = 12;
+    const bgX = layout.x - padding;
+    const bgY = layout.y - padding;
+    const bgWidth = layout.containerWidth + (padding * 2);
+    const bgHeight = layout.containerHeight + (padding * 2);
+    
+    // Background with blur effect simulation
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(bgX, bgY, bgWidth, bgHeight, radius);
+    this.ctx.fill();
+    
+    // Subtle border
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    this.ctx.lineWidth = 1;
+    this.ctx.stroke();
+    
+    this.ctx.restore();
+    
+    // Render content based on type
+    switch (type) {
+      case 'speed':
+        this._renderSpeedContent(layout);
+        break;
+      case 'time':
+        this._renderTimeContent(layout);
+        break;
+      case 'distance':
+        this._renderDistanceContent(layout);
+        break;
+      case 'heading':
+        this._renderHeadingContent(layout);
+        break;
+    }
+  }
+  
+  /**
+   * Render speed content with proper text fitting
+   * @private
+   */
+  _renderSpeedContent(layout) {
     const speed = round1(this.data.speedKph);
-    const speedText = `${speed.toFixed(1)}`;
-    const unitText = 'km/h';
+    const speedText = speed < 100 ? `${speed.toFixed(0)}` : '99+';
     
-    // Speed value in accent color
-    this.ctx.fillStyle = this.theme.accent;
-    this.ctx.font = this.fonts.speedLarge;
-    this.ctx.fillText(speedText, this.layout.speed.x, this.layout.speed.y);
-    
-    // Get text width for unit positioning
-    const speedWidth = this.ctx.measureText(speedText).width;
-    
-    // Speed unit
-    this.ctx.fillStyle = this.theme.fg;
-    this.ctx.font = this.fonts.small;
-    this.ctx.fillText(unitText, this.layout.speed.x + speedWidth + 10, this.layout.speed.y + 20);
-    
-    // Speed label
+    // Label at top
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     this.ctx.font = this.fonts.label;
-    this.ctx.fillText('SPEED', this.layout.speed.x, this.layout.speed.y - 20);
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText('SPEED', layout.x + 8, layout.y + 8);
+    
+    // Main speed value - centered in card
+    this.ctx.fillStyle = this.theme.accent;
+    this.ctx.font = this.fonts.valueXLarge;
+    this.ctx.textAlign = 'center';
+    const centerX = layout.x + layout.containerWidth / 2;
+    this.ctx.fillText(speedText, centerX, layout.y + 28);
+    
+    // Unit below speed value
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    this.ctx.font = this.fonts.labelSmall;
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('km/h', centerX, layout.y + 55);
   }
   
   /**
-   * Render elapsed time
+   * Render time content with proper alignment
    * @private
    */
-  _renderTime() {
+  _renderTimeContent(layout) {
     const timeText = formatTime(this.data.elapsedMs);
     
-    this.ctx.fillStyle = this.theme.fg;
-    this.ctx.font = this.fonts.medium;
-    this.ctx.fillText(timeText, this.layout.time.x, this.layout.time.y);
-    
-    // Time label
+    // Label at top
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     this.ctx.font = this.fonts.label;
-    this.ctx.fillText('TIME', this.layout.time.x, this.layout.time.y - 20);
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText('TIME', layout.x + 8, layout.y + 8);
+    
+    // Time value - centered in card
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = this.fonts.valueMedium;
+    this.ctx.textAlign = 'center';
+    const centerX = layout.x + layout.containerWidth / 2;
+    this.ctx.fillText(timeText, centerX, layout.y + 35);
   }
   
   /**
-   * Render distance traveled
+   * Render distance content with smart units
    * @private
    */
-  _renderDistance() {
-    const distanceText = `${kmStr(this.data.distanceM)} km`;
+  _renderDistanceContent(layout) {
+    const distanceKm = this.data.distanceM / 1000;
+    const distanceText = distanceKm < 1 ? 
+      `${Math.round(this.data.distanceM)}m` : 
+      `${distanceKm.toFixed(1)}km`;
     
-    this.ctx.fillStyle = this.theme.fg;
-    this.ctx.font = this.fonts.medium;
-    this.ctx.fillText(distanceText, this.layout.distance.x, this.layout.distance.y);
-    
-    // Distance label
+    // Label at top
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     this.ctx.font = this.fonts.label;
-    this.ctx.fillText('DISTANCE', this.layout.distance.x, this.layout.distance.y - 20);
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText('DISTANCE', layout.x + 8, layout.y + 8);
+    
+    // Distance value - centered in card
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = this.fonts.valueLarge;
+    this.ctx.textAlign = 'center';
+    const centerX = layout.x + layout.containerWidth / 2;
+    this.ctx.fillText(distanceText, centerX, layout.y + 35);
   }
   
   /**
-   * Render heading/compass display
+   * Render heading content with proper alignment
    * @private
    */
-  _renderHeading() {
+  _renderHeadingContent(layout) {
     const compass = compassFromDegrees(this.data.headingDeg);
     const degrees = Math.round(this.data.headingDeg);
-    const headingText = `${compass} ${degrees.toString().padStart(3, '0')}°`;
+    const headingText = `${compass} ${degrees}°`;
     
-    this.ctx.fillStyle = this.theme.accent;
-    this.ctx.font = this.fonts.medium;
-    this.ctx.textAlign = 'right';
-    this.ctx.fillText(headingText, this.layout.heading.x, this.layout.heading.y);
-    
-    // Heading label
-    this.ctx.fillStyle = this.theme.fg;
+    // Label at top
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     this.ctx.font = this.fonts.label;
-    this.ctx.fillText('HEADING', this.layout.heading.x, this.layout.heading.y - 20);
-    
-    // Reset text alignment
     this.ctx.textAlign = 'left';
+    this.ctx.fillText('HEADING', layout.x + 8, layout.y + 8);
+    
+    // Heading value - centered in card
+    this.ctx.fillStyle = this.theme.accent;
+    this.ctx.font = this.fonts.valueMedium;
+    this.ctx.textAlign = 'center';
+    const centerX = layout.x + layout.containerWidth / 2;
+    this.ctx.fillText(headingText, centerX, layout.y + 35);
   }
   
   /**
