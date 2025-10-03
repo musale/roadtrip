@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import './App.css'
 
 // Import context and components
@@ -6,93 +6,32 @@ import { AppProvider, useAppContext } from './context/AppContext'
 import LiveHUD from './components/LiveHUD'
 import MapView from './components/MapView'
 import CameraView from './components/CameraView'
+import StatusBar from './components/StatusBar'
+import ControlBar from './components/ControlBar'
 
 // Main App component (wrapped by context)
 function AppContent() {
   const {
     state,
     tripRecorder,
-    actions,
-    utils
+    actions
   } = useAppContext();
 
-  const { mode, isLoading, error, followMode } = state;
-  const { currentTrip, stats, isRecording } = tripRecorder;
+  const { mode, isLoading } = state;
+  const { currentTrip } = tripRecorder;
 
-  // Handle recording toggle
-  const handleRecordToggle = async () => {
-    try {
-      if (isRecording) {
-        await actions.stopRecording();
-      } else {
-        await actions.startRecording();
-      }
-    } catch (err) {
-      console.error('Recording toggle failed:', err);
-    }
-  };
-
-  // Handle mode switching
-  const handleModeSwitch = () => {
-    const newMode = mode === 'camera' ? 'map' : 'camera';
-    actions.setMode(newMode);
-  };
-
-  // Handle fit bounds (map mode)
-  const handleFitBounds = () => {
-    if (window.roadtripMapFitBounds) {
-      window.roadtripMapFitBounds();
-    }
-  };
-
-  // Get GPS status for display
-  const gpsStatus = utils.getGPSStatusDisplay();
+  // Expose actions globally for StatusBar error dismissal
+  useEffect(() => {
+    window.appActions = actions;
+    return () => {
+      delete window.appActions;
+    };
+  }, [actions]);
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${mode === 'camera' ? 'mode-camera' : 'mode-map'}`}>
       {/* Status Bar */}
-      <div className="absolute top-0 left-0 right-0 z-50 bg-black/50 text-white p-4">
-        <div className="flex justify-between items-center">
-          <div className="text-sm">
-            GPS: <span className={gpsStatus.color}>{gpsStatus.text}</span>
-            {state.gpsStatus.accuracy && (
-              <span className="text-xs ml-1">({Math.round(state.gpsStatus.accuracy)}m)</span>
-            )}
-          </div>
-          <div className="text-lg font-mono">
-            RoadTrip
-          </div>
-          <div className="text-sm">
-            Mode: <span className="capitalize">{mode}</span>
-          </div>
-        </div>
-        
-        {/* Recording Status */}
-        {isRecording && (
-          <div className="mt-2 text-center">
-            <div className="inline-flex items-center gap-2 bg-red-600/80 px-3 py-1 rounded-full text-xs">
-              <div className="w-2 h-2 bg-red-300 rounded-full animate-pulse"></div>
-              RECORDING
-            </div>
-          </div>
-        )}
-        
-        {/* Error Display */}
-        {error && (
-          <div className="mt-2 text-center">
-            <div className="inline-flex items-center gap-2 bg-yellow-600/80 px-3 py-1 rounded-full text-xs">
-              <span>??</span>
-              {error}
-              <button 
-                onClick={actions.clearError}
-                className="ml-2 text-white hover:text-gray-300"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      <StatusBar className="absolute top-0 left-0 right-0 z-50" />
 
       {/* Main Content Area */}
       <div className="flex-1 relative w-full h-screen">
@@ -116,127 +55,7 @@ function AppContent() {
       </div>
 
       {/* Control Bar */}
-      <div className="absolute bottom-0 left-0 right-0 z-50 bg-black/50 p-4">
-        <div className="flex justify-between items-center">
-          {/* Mode Toggle */}
-          <button
-            onClick={handleModeSwitch}
-            className="btn-secondary"
-            disabled={isLoading}
-          >
-            {mode === 'camera' ? '??? Map' : '?? Camera'}
-          </button>
-
-          {/* Record Button */}
-          <button
-            onClick={handleRecordToggle}
-            disabled={!state.gpsStatus.supported || state.gpsStatus.error || isLoading}
-            className={`${isRecording ? 'btn-recording' : 'btn-primary'} ${
-              !state.gpsStatus.supported || state.gpsStatus.error || isLoading 
-                ? 'opacity-50 cursor-not-allowed' 
-                : ''
-            }`}
-          >
-            {isLoading ? (
-              <span>?</span>
-            ) : isRecording ? (
-              <span>?? Stop</span>
-            ) : (
-              <span>?? Record</span>
-            )}
-          </button>
-
-          {/* Mode-specific controls */}
-          {mode === 'map' ? (
-            <button 
-              onClick={handleFitBounds}
-              className="btn-secondary"
-              disabled={!currentTrip || currentTrip.points.length === 0}
-              title="Fit map to trip"
-            >
-              ?? Fit
-            </button>
-          ) : (
-            <div className="w-16"> {/* Spacer for layout consistency */}
-            </div>
-          )}
-        </div>
-        
-        {/* Trip Statistics Bar */}
-        {isRecording && (
-          <div className="mt-3 flex justify-center gap-4 text-white text-sm">
-            <div className="text-center">
-              <div className="text-xs opacity-75">Speed</div>
-              <div className="font-mono">{utils.formatSpeed(stats.currentSpeedKph)} km/h</div>
-            </div>
-            <div className="text-center">
-              <div className="text-xs opacity-75">Distance</div>
-              <div className="font-mono">{utils.formatDistance(stats.distanceMeters)} km</div>
-            </div>
-            <div className="text-center">
-              <div className="text-xs opacity-75">Time</div>
-              <div className="font-mono">{utils.formatDuration(stats.durationMs)}</div>
-            </div>
-            {stats.maxSpeedKph > 0 && (
-              <div className="text-center">
-                <div className="text-xs opacity-75">Max</div>
-                <div className="font-mono">{utils.formatSpeed(stats.maxSpeedKph)} km/h</div>
-              </div>
-            )}
-          </div>
-        )}
-        
-        {/* Debug Export Buttons (Development only) */}
-        {currentTrip && currentTrip.points.length > 0 && process.env.NODE_ENV === 'development' && (
-          <div className="mt-2 flex gap-2 justify-center">
-            <button 
-              onClick={() => {
-                try {
-                  const gpx = actions.exportTrip('gpx');
-                  console.log('GPX Export:', gpx.substring(0, 200) + '...');
-                } catch (err) {
-                  console.error('GPX Export Error:', err);
-                }
-              }}
-              className="text-xs bg-blue-600 text-white px-2 py-1 rounded"
-            >
-              Test GPX
-            </button>
-            <button 
-              onClick={() => {
-                try {
-                  const geoJSON = actions.exportTrip('geojson');
-                  console.log('GeoJSON Export:', geoJSON);
-                } catch (err) {
-                  console.error('GeoJSON Export Error:', err);
-                }
-              }}
-              className="text-xs bg-green-600 text-white px-2 py-1 rounded"
-            >
-              Test GeoJSON
-            </button>
-            <button 
-              onClick={() => {
-                try {
-                  actions.downloadTrip('gpx');
-                } catch (err) {
-                  console.error('Download GPX Error:', err);
-                }
-              }}
-              className="text-xs bg-purple-600 text-white px-2 py-1 rounded"
-            >
-              Download GPX
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* PWA Installation Prompt */}
-      <div className="absolute top-16 right-4 z-40">
-        <div className="bg-blue-600 text-white text-xs px-2 py-1 rounded">
-          PWA Ready ?
-        </div>
-      </div>
+      <ControlBar className="absolute bottom-0 left-0 right-0 z-50" />
 
       {/* Loading Overlay */}
       {isLoading && (
@@ -250,8 +69,6 @@ function AppContent() {
 
       {/* Accessibility announcements */}
       <div className="sr-only" aria-live="polite" aria-atomic="true">
-        {isRecording && `Recording trip. Current speed ${utils.formatSpeed(stats.currentSpeedKph)} kilometers per hour.`}
-        {error && `Error: ${error}`}
         {mode && `Switched to ${mode} mode`}
       </div>
     </div>

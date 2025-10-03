@@ -1,0 +1,117 @@
+/**
+ * Button - Base reusable button component with variants and states
+ * Provides consistent styling with Neon Velocity design system
+ */
+
+import React from 'react';
+
+const Button = ({ 
+  children,
+  variant = 'primary', // 'primary' | 'secondary' | 'danger'
+  size = 'md', // 'sm' | 'md' | 'lg'
+  disabled = false,
+  loading = false,
+  fullWidth = false,
+  onClick,
+  type = 'button',
+  className = '',
+  ariaLabel,
+  ...rest
+}) => {
+  // Base styles - always applied
+  const baseStyles = `
+    font-display tracking-wide font-semibold
+    transition-all duration-fast ease-nv
+    disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2
+    active:scale-95
+    inline-flex items-center justify-center gap-2
+  `;
+
+  // Size variants with proper touch targets (44px minimum)
+  const sizeStyles = {
+    sm: 'px-3 py-2 text-xs min-h-[44px] min-w-[44px] rounded-md',
+    md: 'px-5 py-3 text-[15px] min-h-[44px] min-w-[44px] rounded-md',
+    lg: 'px-6 py-4 text-base min-h-[48px] min-w-[48px] rounded-lg'
+  };
+
+  // Variant styles
+  const variantStyles = {
+    primary: `
+      text-black bg-brand
+      hover:-translate-y-[1px] focus-visible:-translate-y-[1px]
+      active:translate-y-0
+    `,
+    secondary: `
+      text-white border border-gray-600 bg-gray-800/40
+      hover:border-brand hover:text-brand
+      focus-visible:border-brand focus-visible:text-brand
+    `,
+    danger: `
+      text-white bg-red-500
+      hover:bg-red-600 hover:opacity-90
+      focus-visible:bg-red-600
+    `
+  };
+
+  // Add neon shadow to primary variant
+  const primaryShadow = variant === 'primary' 
+    ? 'shadow-[0_0_0_1px_rgba(0,245,212,0.6),0_0_48px_rgba(0,245,212,0.2)_inset,0_4px_12px_rgba(0,0,0,0.45)]'
+    : variant === 'secondary'
+    ? 'shadow-nv1'
+    : 'shadow-nv2';
+
+  // Width style
+  const widthStyle = fullWidth ? 'w-full' : '';
+
+  // Loading spinner
+  const spinner = loading ? (
+    <svg 
+      className="animate-spin h-4 w-4" 
+      xmlns="http://www.w3.org/2000/svg" 
+      fill="none" 
+      viewBox="0 0 24 24"
+    >
+      <circle 
+        className="opacity-25" 
+        cx="12" 
+        cy="12" 
+        r="10" 
+        stroke="currentColor" 
+        strokeWidth="4"
+      />
+      <path 
+        className="opacity-75" 
+        fill="currentColor" 
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  ) : null;
+
+  // Combine all styles
+  const combinedStyles = `
+    ${baseStyles}
+    ${sizeStyles[size]}
+    ${variantStyles[variant]}
+    ${primaryShadow}
+    ${widthStyle}
+    ${className}
+  `.trim().replace(/\s+/g, ' ');
+
+  return (
+    <button
+      type={type}
+      className={combinedStyles}
+      onClick={onClick}
+      disabled={disabled || loading}
+      aria-label={ariaLabel}
+      aria-busy={loading}
+      {...rest}
+    >
+      {spinner}
+      {children}
+    </button>
+  );
+};
+
+export default Button;
