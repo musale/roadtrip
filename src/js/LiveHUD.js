@@ -116,7 +116,7 @@ class LiveHUD {
     // Apply neon glow effect (optional, based on prefers-reduced-motion)
     if (!this.prefersReducedMotion) {
       this.ctx.shadowColor = this.brandColor;
-      this.ctx.shadowBlur = 15;
+      this.ctx.shadowBlur = 0; // Completely remove neon glow
     }
 
     this.ctx.fillStyle = this.brandColor;
@@ -129,34 +129,33 @@ class LiveHUD {
     this.ctx.textAlign = 'right';
     this.ctx.fillText(`${this.speedKph.toFixed(0)}`, Math.floor(this.internalWidth - 40), Math.floor(100));
     this.ctx.font = '30px monospace';
-    this.ctx.fillText('KPH', Math.floor(this.internalWidth - 40), Math.floor(140));
+    this.ctx.fillText('KPH', Math.floor(this.internalWidth - 40), Math.floor(160));
 
     // Distance
+    const distValue = (this.distanceM / 1000).toFixed(2);
     this.ctx.font = 'bold 40px monospace';
     this.ctx.textAlign = 'left';
-    this.ctx.fillText(`DIST: ${(this.distanceM / 1000).toFixed(2)}`, Math.floor(40), Math.floor(100));
-    this.ctx.font = '25px monospace'; // Smaller font for KM
-    this.ctx.fillText('KM', Math.floor(40), Math.floor(135)); // Position KM below the value
+    this.ctx.fillText(`DIST: ${distValue} KM`, Math.floor(40), Math.floor(100));
 
     // Elapsed Time
     const timeStr = new Date(this.elapsedMs).toISOString().substr(11, 8);
-    this.ctx.fillText(`TIME: ${timeStr}`, Math.floor(40), Math.floor(150));
+    this.ctx.fillText(`TIME: ${timeStr}`, Math.floor(40), Math.floor(140));
 
     // Heading (simple compass)
     this.ctx.font = 'bold 40px monospace';
     this.ctx.textAlign = 'center';
-    this.ctx.fillText(`HDG: ${this.headingDeg.toFixed(0)}°`, Math.floor(this.internalWidth / 2), Math.floor(80));
+    this.ctx.fillText(`HDG: ${this.headingDeg.toFixed(0)}°`, Math.floor(this.internalWidth / 2), Math.floor(100));
 
     // Draw a simple heading indicator
     this.ctx.beginPath();
-    this.ctx.arc(Math.floor(this.internalWidth / 2), Math.floor(150), 30, 0, Math.PI * 2);
+    this.ctx.arc(Math.floor(this.internalWidth / 2), Math.floor(170), 30, 0, Math.PI * 2);
     this.ctx.stroke();
 
     this.ctx.beginPath();
     const angle = (this.headingDeg - 90) * Math.PI / 180; // Adjust for canvas 0deg being right
     const arrowLength = 25;
     const centerX = Math.floor(this.internalWidth / 2);
-    const centerY = Math.floor(150);
+    const centerY = Math.floor(170);
     this.ctx.moveTo(centerX, centerY);
     this.ctx.lineTo(centerX + arrowLength * Math.cos(angle), centerY + arrowLength * Math.sin(angle));
     this.ctx.stroke();

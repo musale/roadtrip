@@ -6,11 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RoadTrip</title>
     <link rel="stylesheet" href="./css/styles.css">
-    <link rel="manifest" href="/src/pwa/manifest.webmanifest">
+    <link rel="manifest" href="/src/js/pwa/manifest.webmanifest">
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/src/pwa/sw.js')
+          navigator.serviceWorker.register('/src/js/pwa/sw.js')
             .then(registration => {
               console.log('SW registered: ', registration);
             })
@@ -26,12 +26,13 @@
   <body class="bg-bg text-text-primary font-mono">
     <div id="app" class="flex flex-col h-screen">
       <header class="p-4 bg-surface shadow-neon">
-        <nav class="flex justify-between items-center">
-          <h1 class="text-2xl text-brand animate-glowPulse">RoadTrip</h1>
-          <div class="flex space-x-4">
-            <button id="modeToggle" class="px-4 py-2 bg-accent text-bg rounded-DEFAULT focus-visible:outline-accent">Mode: Camera</button>
-            <button id="captureToggle" class="px-4 py-2 bg-accent text-bg rounded-DEFAULT focus-visible:outline-accent">Capture: Single</button>
-            <button id="facingToggle" class="px-4 py-2 bg-accent text-bg rounded-DEFAULT focus-visible:outline-accent">Facing: Environment</button>
+        <nav class="flex flex-col sm:flex-row sm:justify-between sm:items-center">
+          <h1 class="text-xl text-brand animate-glowPulse">RoadTrip</h1>
+          <div class="flex flex-col sm:flex-row sm:space-x-4 space-y-2 sm:space-y-0 mt-2 sm:mt-0">
+            <button id="modeToggle" class="px-2 py-1 text-base bg-accent text-bg rounded-DEFAULT focus-visible:outline-accent">Mode: Camera</button>
+            <button id="captureToggle" class="px-2 py-1 text-base bg-accent text-bg rounded-DEFAULT focus-visible:outline-accent">Capture: Single</button>
+            <button id="facingToggle" class="px-2 py-1 text-base bg-accent text-bg rounded-DEFAULT focus-visible:outline-accent">Facing: Environment</button>
+            <button id="pastTripsToggle" class="px-2 py-1 text-base bg-accent text-bg rounded-DEFAULT focus-visible:outline-accent sm:hidden">Past Trips</button>
           </div>
         </nav>
       </header>
@@ -48,16 +49,16 @@
         <div id="hud-aria" aria-live="polite" class="sr-only"></div>
 
         <!-- Controls -->
-        <div class="absolute bottom-4 left-4 right-4 flex justify-center space-x-4">
-          <button id="startButton" class="px-8 py-4 bg-brand text-bg rounded-full text-xl font-bold shadow-neon focus-visible:outline-brand">Start</button>
-          <button id="stopButton" class="px-8 py-4 bg-accent text-bg rounded-full text-xl font-bold shadow-neon focus-visible:outline-accent hidden">Stop</button>
+        <div class="absolute bottom-4 left-4 right-4 flex flex-col sm:flex-row justify-center space-y-2 sm:space-y-0 sm:space-x-4">
+          <button id="startButton" class="px-4 py-2 bg-brand text-bg rounded-full text-lg font-bold shadow-neon focus-visible:outline-brand">Start</button>
+          <button id="stopButton" class="px-4 py-2 bg-accent text-bg rounded-full text-lg font-bold shadow-neon focus-visible:outline-accent hidden">Stop</button>
         </div>
       </main>
 
       <footer class="p-4 bg-surface text-sm text-center">
         <section id="library" class="mt-4">
-          <h2 class="text-xl text-brand">Past Trips</h2>
-          <ul id="tripList" class="mt-2 max-h-48 overflow-y-auto"></ul>
+          <h2 class="text-lg text-brand">Past Trips</h2>
+          <ul id="tripList" class="mt-2 max-h-48 overflow-y-auto hidden sm:block"></ul>
         </section>
         <div id="storageMeter" class="mt-2 text-text-primary">Storage: Estimating...</div>
       </footer>

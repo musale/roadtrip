@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const hudAria = document.getElementById('hud-aria');
   const storageMeter = document.getElementById('storageMeter');
   const tripList = document.getElementById('tripList');
+  const pastTripsToggle = document.getElementById('pastTripsToggle');
 
   // Add a video player overlay to the main element
   const mainElement = document.querySelector('main');
@@ -242,6 +243,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   startButton.addEventListener('click', startRecording);
   stopButton.addEventListener('click', stopRecording);
 
+  if (pastTripsToggle) {
+    pastTripsToggle.addEventListener('click', () => {
+      tripList.classList.toggle('hidden');
+    });
+  }
+
   // Initial UI update
   updateUI();
 
@@ -285,11 +292,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     li.className = 'flex justify-between items-center p-2 bg-surface rounded-DEFAULT mb-2';
     li.innerHTML = `
       <span>${new Date(trip.startedAt).toLocaleString()} - ${(trip.stats.distanceM / 1000).toFixed(2)} km</span>
-      <div>
-        ${trip.videoFilename ? `<button class="replay-video px-3 py-1 bg-accent text-bg rounded-DEFAULT text-sm mr-2">Replay Video</button>` : ''}
-        ${trip.videoFilename ? `<button class="download-video px-3 py-1 bg-accent text-bg rounded-DEFAULT text-sm mr-2">Download Video</button>` : ''}
-        ${trip.videoFilename && navigator.share ? `<button class="share-video px-3 py-1 bg-accent text-bg rounded-DEFAULT text-sm mr-2">Share Video</button>` : ''}
-        <button class="export-gpx px-3 py-1 bg-brand text-bg rounded-DEFAULT text-sm mr-2">GPX</button>
+      <div class="flex flex-col sm:flex-row sm:space-x-2 space-y-1">
+        ${trip.videoFilename ? `<button class="replay-video px-3 py-1 bg-accent text-bg rounded-DEFAULT text-sm">Replay Video</button>` : ''}
+        ${trip.videoFilename ? `<button class="download-video px-3 py-1 bg-accent text-bg rounded-DEFAULT text-sm">Download Video</button>` : ''}
+        ${trip.videoFilename && navigator.share ? `<button class="share-video px-3 py-1 bg-accent text-bg rounded-DEFAULT text-sm">Share Video</button>` : ''}
+        <button class="export-gpx px-3 py-1 bg-brand text-bg rounded-DEFAULT text-sm">GPX</button>
         <button class="export-geojson px-3 py-1 bg-brand text-bg rounded-DEFAULT text-sm">GeoJSON</button>
       </div>
     `;
