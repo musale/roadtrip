@@ -37,3 +37,23 @@ h1, h2, h3, h4, h5, h6 {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
+
+.settings-item {
+  @apply block w-full text-left px-4 py-2 text-sm text-white/80 hover:bg-brand hover:text-black transition-colors duration-150 ease-out;
+}
+
+.mirror {
+  transform: scaleX(-1);
+}
+
+.trip-action {
+  @apply px-3 py-1 bg-brand text-black rounded-md text-xs font-heading uppercase tracking-wide transition-colors duration-150 ease-out;
+}
+
+.trip-action:hover {
+  background-color: color-mix(in srgb, var(--color-brand) 80%, black 20%);
+}
+
+.trip-action:disabled {
+  @apply bg-white/10 text-white/40 cursor-not-allowed;
+}
