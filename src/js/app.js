@@ -1,0 +1,305 @@
+// src/app.js
+
+import '../css/styles.css';
+import TripRecorder from './TripRecorder.js';
+import LiveHUD from './LiveHUD.js';
+import VideoComposer from './VideoComposer.js';
+import MapView from './MapView.js';
+import { getTrips, writeVideoToOpfs, clearVideoChunks } from './storage/db.js';
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const modeToggle = document.getElementById('modeToggle');
+  const captureToggle = document.getElementById('captureToggle');
+  const facingToggle = document.getElementById('facingToggle');
+  const startButton = document.getElementById('startButton');
+  const stopButton = document.getElementById('stopButton');
+  const cameraFeed = document.getElementById('cameraFeed');
+  const mapContainer = document.getElementById('mapContainer');
+  const hudCanvas = document.getElementById('hudCanvas');
+  const hudAria = document.getElementById('hud-aria');
+  const storageMeter = document.getElementById('storageMeter');
+  const tripList = document.getElementById('tripList');
+
+  const tripRecorder = new TripRecorder();
+  const liveHUD = new LiveHUD();
+  const videoComposer = new VideoComposer(hudCanvas);
+  const mapView = new MapView({ container: mapContainer });
+
+  liveHUD.attach(hudCanvas);
+
+  let currentMode = 'camera'; // 'camera' or 'map'
+  let currentCapture = 'single'; // 'single' or 'dual'
+  let currentFacing = 'environment'; // 'environment' or 'user'
+  let isRecording = false;
+  let wakeLock = null;
+
+  // Initialize UI states
+  const updateUI = () => {
+    modeToggle.textContent = `Mode: ${currentMode.charAt(0).toUpperCase() + currentMode.slice(1)}`;
+    captureToggle.textContent = `Capture: ${currentCapture.charAt(0).toUpperCase() + currentCapture.slice(1)}`;
+    facingToggle.textContent = `Facing: ${currentFacing.charAt(0).toUpperCase() + currentFacing.slice(1)}`;
+
+    if (currentMode === 'camera') {
+      cameraFeed.classList.remove('hidden');
+      mapContainer.classList.add('hidden');
+    } else {
+      cameraFeed.classList.add('hidden');
+      mapContainer.classList.remove('hidden');
+    }
+
+    if (isRecording) {
+      startButton.classList.add('hidden');
+      stopButton.classList.remove('hidden');
+    } else {
+      startButton.classList.remove('hidden');
+      stopButton.classList.add('hidden');
+    }
+  };
+
+  const startCamera = async () => {
+    let success = false;
+    if (currentCapture === 'dual') {
+      success = await videoComposer.startDual();
+      if (!success) {
+        console.warn("Dual camera failed, falling back to single.");
+        currentCapture = 'single';
+        updateUI();
+        success = await videoComposer.startSingle({ facing: currentFacing });
+      }
+    } else {
+      success = await videoComposer.startSingle({ facing: currentFacing });
+    }
+    if (success) {
+      cameraFeed.srcObject = videoComposer.stream;
+      cameraFeed.play();
+    }
+    return success;
+  };
+
+  const stopCamera = () => {
+    videoComposer.stopCamera();
+    cameraFeed.srcObject = null;
+  };
+
+  const startRecording = async () => {
+    if (isRecording) return;
+
+    isRecording = true;
+    updateUI();
+
+    // Acquire wake lock
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log('Screen Wake Lock acquired!');
+    } catch (err) {
+      console.error(`${err.name}, ${err.message}`);
+    }
+
+    tripRecorder.startTrip();
+    liveHUD.start();
+    if (currentMode === 'map') {
+      mapView.init();
+      mapView.setFollow(true);
+    }
+
+    // Start video recording
+    videoComposer.startRecording(async (chunk) => {
+      // Progressively save video chunks
+      const filename = `video-chunk-${Date.now()}.webm`; // Or mp4
+      await writeVideoToOpfs(filename, chunk);
+      // Optionally, save chunk metadata to IndexedDB if needed for recovery
+    });
+
+    // Animation loop for HUD and video composition
+    const animate = () => {
+      const tripData = tripRecorder.getCurrentTrip();
+      if (tripData) {
+        liveHUD.update({
+          speedKph: tripData.live.speedKph,
+          elapsedMs: tripData.live.elapsedMs,
+          distanceM: tripData.stats.distanceM,
+          headingDeg: tripData.live.headingDeg,
+        });
+        if (currentMode === 'map') {
+          mapView.updateLiveTrack(tripData.points);
+          mapView.setCurrentPoint(tripData.points[tripData.points.length - 1]);
+        }
+      }
+      // Draw camera feed and HUD onto the canvas
+      videoComposer.drawCameraFeedToCanvas(); // Draws video to canvas
+      liveHUD._draw(); // Draws HUD on top
+
+      if (isRecording) {
+        requestAnimationFrame(animate);
+      }
+    };
+    requestAnimationFrame(animate);
+  };
+
+      const stopRecording = async () => {
+        if (!isRecording) return;
+  
+        isRecording = false;
+        updateUI();
+  
+        // Release wake lock
+        if (wakeLock) {
+          wakeLock.release();
+          wakeLock = null;
+          console.log('Screen Wake Lock released.');
+        }
+  
+        liveHUD.stop();
+        if (currentMode === 'map') {
+          mapView.setFollow(false);
+          const currentTripData = tripRecorder.getCurrentTrip();
+          if (currentTripData && currentTripData.points.length > 0) {
+            mapView.fitBoundsToPoints(currentTripData.points);
+          }
+        }
+  
+        const finalVideoBlob = await videoComposer.stopRecording();
+        if (finalVideoBlob) {
+          console.log("Final video blob created, size:", finalVideoBlob.size, "type:", finalVideoBlob.type);
+          const videoFilename = `roadtrip-${Date.now()}.webm`; // Or mp4
+          try {
+            await writeVideoToOpfs(videoFilename, finalVideoBlob);
+            console.log("Final video successfully saved to OPFS:", videoFilename);
+            await clearVideoChunks(); // Clear temporary chunks after final video is composed/saved
+          } catch (error) {
+            console.error("Error saving final video to OPFS:", error);
+          }
+        } else {
+          console.warn("No final video blob to save.");
+        }
+  
+        const trip = await tripRecorder.stopTrip();
+        if (trip) {
+          renderTrip(trip);
+        }
+      };
+  // Event Listeners
+  modeToggle.addEventListener('click', async () => {
+    currentMode = currentMode === 'camera' ? 'map' : 'camera';
+    updateUI();
+    if (currentMode === 'camera') {
+      mapView.destroy();
+      await startCamera();
+    } else {
+      stopCamera();
+      mapView.init();
+    }
+  });
+
+  captureToggle.addEventListener('click', async () => {
+    currentCapture = currentCapture === 'single' ? 'dual' : 'single';
+    updateUI();
+    if (isRecording) {
+      // Restart camera with new capture mode
+      stopCamera();
+      await startCamera();
+    }
+  });
+
+  facingToggle.addEventListener('click', async () => {
+    currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
+    updateUI();
+    if (isRecording) {
+      // Restart camera with new facing mode
+      stopCamera();
+      await startCamera();
+    }
+  });
+
+  startButton.addEventListener('click', startRecording);
+  stopButton.addEventListener('click', stopRecording);
+
+  // Initial UI update
+  updateUI();
+
+  // Placeholder for storage meter
+  const updateStorageMeter = async () => {
+    if (navigator.storage && navigator.storage.estimate) {
+      const { usage, quota } = await navigator.storage.estimate();
+      const percentageUsed = (usage / quota) * 100;
+      const freeGB = (quota - usage) / (1024 * 1024 * 1024);
+      storageMeter.textContent = `Storage: ${freeGB.toFixed(2)} GB free (${percentageUsed.toFixed(2)}% used)`;
+    } else {
+      storageMeter.textContent = 'Storage: Not supported';
+    }
+  };
+  updateStorageMeter();
+  setInterval(updateStorageMeter, 30000); // Update every 30 seconds
+
+  // Crash-resume logic (simplified)
+  const checkCrashResume = async () => {
+    const trips = await getTrips();
+    const activeTrip = trips.find(trip => !trip.endedAt);
+    if (activeTrip) {
+      if (confirm("It looks like you have an unsaved trip. Do you want to recover it?")) {
+        // TODO: Implement actual recovery logic, e.g., load points, video chunks
+        console.log("Recovering trip:", activeTrip);
+        // For now, just mark it as ended
+        activeTrip.endedAt = Date.now();
+        // await addTrip(activeTrip); // Re-save the ended trip
+        renderTrip(activeTrip);
+      } else {
+        // Optionally delete the active trip if user doesn't want to recover
+        // For now, leave it as is.
+      }
+    }
+  };
+  checkCrashResume();
+
+  // Render past trips
+  const renderTrip = (trip) => {
+    const li = document.createElement('li');
+    li.className = 'flex justify-between items-center p-2 bg-surface rounded-DEFAULT mb-2';
+    li.innerHTML = `
+      <span>${new Date(trip.startedAt).toLocaleString()} - ${(trip.stats.distanceM / 1000).toFixed(2)} km</span>
+      <div>
+        <button class="export-gpx px-3 py-1 bg-brand text-bg rounded-DEFAULT text-sm mr-2">GPX</button>
+        <button class="export-geojson px-3 py-1 bg-brand text-bg rounded-DEFAULT text-sm">GeoJSON</button>
+      </div>
+    `;
+    tripList.prepend(li);
+
+    li.querySelector('.export-gpx').addEventListener('click', () => {
+      const blob = tripRecorder.exportGPX(trip);
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `roadtrip-${trip.id}.gpx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    });
+
+    li.querySelector('.export-geojson').addEventListener('click', () => {
+      const blob = tripRecorder.exportGeoJSON(trip);
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `roadtrip-${trip.id}.geojson`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    });
+  };
+
+  const loadAndRenderTrips = async () => {
+    const trips = await getTrips();
+    tripList.innerHTML = ''; // Clear existing list
+    trips.sort((a, b) => b.startedAt - a.startedAt).forEach(renderTrip);
+  };
+  loadAndRenderTrips();
+
+  // Initial camera start
+  await startCamera();
+});
