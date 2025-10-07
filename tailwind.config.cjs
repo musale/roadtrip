@@ -37,6 +37,10 @@ module.exports = {
           '100%': { transform: 'translate(0, 0) scaleY(1)', opacity: '1' },
         },
       },
+      fontFamily: {
+        heading: ['Orbitron', 'sans-serif'],
+        body: ['IBM Plex Sans', 'sans-serif'],
+      },
     },
   },
   plugins: [],
