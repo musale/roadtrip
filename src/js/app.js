@@ -231,18 +231,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     let success = false;
     if (currentCapture === 'dual') {
       success = await videoComposer.startDual();
-      if (!success) {
-        console.warn("Dual camera failed, falling back to single.");
-        currentCapture = 'single';
-        updateUI();
-        success = await videoComposer.startSingle({ facing: currentFacing });
-      }
     } else {
       success = await videoComposer.startSingle({ facing: currentFacing });
     }
+
     if (success) {
       videoFeed.srcObject = videoComposer.stream;
       videoFeed.play();
+      // Apply mirroring if user-facing camera is active
+      if (videoComposer.isUserFacing) {
+        videoFeed.classList.add('scale-x-[-1]');
+      } else {
+        videoFeed.classList.remove('scale-x-[-1]');
+      }
     }
     return success;
   };
@@ -250,6 +251,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const stopCamera = () => {
     videoComposer.stopCamera();
     videoFeed.srcObject = null;
+    videoFeed.classList.remove('scale-x-[-1]'); // Remove mirroring on stop
   };
 
   const startRecording = async () => {

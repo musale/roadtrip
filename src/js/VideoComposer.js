@@ -18,6 +18,7 @@ class VideoComposer {
     this.recordingInterval = null;
     this.isDualCamera = false;
     this.facingMode = 'environment';
+    this.isUserFacing = false; // New property to track if user-facing camera is active
 
     // Low power mode detection
     this.lowPowerMode = false;
@@ -31,31 +32,62 @@ class VideoComposer {
     return devices.filter(device => device.kind === 'videoinput');
   }
 
-  async getStreamByDeviceId(deviceId, { audio = true } = {}) {
-    const constraints = {
-      video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: VIDEO_WIDTH, height: VIDEO_HEIGHT },
-      audio: audio ? { echoCancellation: true, noiseSuppression: true } : false,
-    };
-    return navigator.mediaDevices.getUserMedia(constraints);
+  async _getMediaStream(videoConstraints, audioConstraints = { echoCancellation: true, noiseSuppression: true }) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: audioConstraints });
+    } catch (error) {
+      console.error("Error getting media stream with constraints:", videoConstraints, error);
+      return null;
+    }
   }
 
   async startSingle({ facing = 'environment' }) {
     this.facingMode = facing;
-    const constraints = {
-      video: { facingMode: facing, width: VIDEO_WIDTH, height: VIDEO_HEIGHT },
-      audio: { echoCancellation: true, noiseSuppression: true },
-    };
+    this.isUserFacing = (facing === 'user');
 
-    try {
-      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    let stream = null;
+    let videoConstraints = {};
+
+    // Attempt 1: Ideal facing mode
+    videoConstraints = { facingMode: { ideal: facing }, width: VIDEO_WIDTH, height: VIDEO_HEIGHT };
+    stream = await this._getMediaStream(videoConstraints);
+
+    // Attempt 2: If environment, try to find a specific back camera by label
+    if (!stream && facing === 'environment') {
+      const cameras = await this.listCameras();
+      const rearCamera = cameras.find(camera =>
+        camera.label.toLowerCase().includes('back') || camera.label.toLowerCase().includes('rear')
+      );
+      if (rearCamera) {
+        videoConstraints = { deviceId: { exact: rearCamera.deviceId }, width: VIDEO_WIDTH, height: VIDEO_HEIGHT };
+        stream = await this._getMediaStream(videoConstraints);
+      }
+    }
+
+    // Attempt 3: Fallback to any camera with the specified facing mode
+    if (!stream) {
+      videoConstraints = { facingMode: facing, width: VIDEO_WIDTH, height: VIDEO_HEIGHT };
+      stream = await this._getMediaStream(videoConstraints);
+    }
+
+    // Attempt 4: Fallback to any available camera
+    if (!stream) {
+      videoConstraints = { width: VIDEO_WIDTH, height: VIDEO_HEIGHT };
+      stream = await this._getMediaStream(videoConstraints);
+      // If we got here, we don't know the facing mode for sure, but assume it's not user for mirroring
+      this.isUserFacing = false;
+    }
+
+    if (stream) {
+      this.stream = stream;
       this.cameraFeed.srcObject = this.stream;
       this.videoTracks = this.stream.getVideoTracks();
       this.audioTrack = this.stream.getAudioTracks()[0];
       this.isDualCamera = false;
       this._startFpsCheck();
       return true;
-    } catch (error) {
-      console.error("Error starting single camera stream:", error);
+    } else {
+      console.error("Failed to get any camera stream.");
       return false;
     }
   }
@@ -64,35 +96,50 @@ class VideoComposer {
     let backCameraStream = null;
     let frontCameraStream = null;
 
-    try {
-      // Try to get environment camera
-      backCameraStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: VIDEO_WIDTH, height: VIDEO_HEIGHT },
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
-      this.audioTrack = backCameraStream.getAudioTracks()[0]; // Use audio from back camera
+    // Try to get environment camera (back)
+    const backVideoConstraints = { facingMode: { ideal: 'environment' }, width: VIDEO_WIDTH, height: VIDEO_HEIGHT };
+    backCameraStream = await this._getMediaStream(backVideoConstraints);
 
-      // Try to get user camera
-      frontCameraStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: VIDEO_WIDTH / 2, height: VIDEO_HEIGHT / 2 }, // Smaller for PiP
-        audio: false, // No audio for front camera to avoid echo
-      });
-
-      // If both streams are successful, combine them
-      if (backCameraStream && frontCameraStream) {
-        this.stream = new MediaStream();
-        backCameraStream.getVideoTracks().forEach(track => this.stream.addTrack(track));
-        frontCameraStream.getVideoTracks().forEach(track => this.stream.addTrack(track));
-        this.stream.addTrack(this.audioTrack);
-
-        this.cameraFeed.srcObject = this.stream;
-        this.videoTracks = this.stream.getVideoTracks();
-        this.isDualCamera = true;
-        this._startFpsCheck();
-        return true;
+    if (!backCameraStream) {
+      const cameras = await this.listCameras();
+      const rearCamera = cameras.find(camera =>
+        camera.label.toLowerCase().includes('back') || camera.label.toLowerCase().includes('rear')
+      );
+      if (rearCamera) {
+        backCameraStream = await this._getMediaStream({ deviceId: { exact: rearCamera.deviceId }, width: VIDEO_WIDTH, height: VIDEO_HEIGHT });
       }
-    } catch (error) {
-      console.warn("Could not start dual camera, falling back to single:", error);
+    }
+
+    if (!backCameraStream) {
+      backCameraStream = await this._getMediaStream({ facingMode: 'environment', width: VIDEO_WIDTH, height: VIDEO_HEIGHT });
+    }
+
+    // Try to get user camera (front)
+    const frontVideoConstraints = { facingMode: { ideal: 'user' }, width: VIDEO_WIDTH / 2, height: VIDEO_HEIGHT / 2 };
+    frontCameraStream = await this._getMediaStream(frontVideoConstraints, false); // No audio for front camera
+
+    if (!frontCameraStream) {
+      frontCameraStream = await this._getMediaStream({ facingMode: 'user', width: VIDEO_WIDTH / 2, height: VIDEO_HEIGHT / 2 }, false);
+    }
+
+    // If both streams are successful, combine them
+    if (backCameraStream && frontCameraStream) {
+      this.stream = new MediaStream();
+      backCameraStream.getVideoTracks().forEach(track => this.stream.addTrack(track));
+      frontCameraStream.getVideoTracks().forEach(track => this.stream.addTrack(track));
+      this.audioTrack = backCameraStream.getAudioTracks()[0];
+      if (this.audioTrack) {
+        this.stream.addTrack(this.audioTrack);
+      }
+
+      this.cameraFeed.srcObject = this.stream;
+      this.videoTracks = this.stream.getVideoTracks();
+      this.isDualCamera = true;
+      this.isUserFacing = false; // Main stream is environment camera
+      this._startFpsCheck();
+      return true;
+    } else {
+      console.warn("Could not start dual camera, falling back to single.");
       // Fallback to single camera if dual fails
       if (backCameraStream) {
         backCameraStream.getTracks().forEach(track => track.stop());
@@ -102,7 +149,6 @@ class VideoComposer {
       }
       return this.startSingle({ facing: this.facingMode });
     }
-    return false;
   }
 
   stopCamera() {
@@ -113,6 +159,7 @@ class VideoComposer {
       this.videoTracks = [];
       this.audioTrack = null;
       this.isDualCamera = false;
+      this.isUserFacing = false; // Reset on stop
       this._stopFpsCheck();
     }
   }
