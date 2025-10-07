@@ -24,8 +24,6 @@ jobs:
 
       - name: Build
         run: npm run build
-        env:
-          BASE: /${{ github.event.repository.name }}/
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4
