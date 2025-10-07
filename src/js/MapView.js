@@ -221,7 +221,7 @@ class MapView {
     if (this.map) {
       const bounds = new maplibregl.LngLatBounds();
       points.forEach(p => bounds.extend([p.lon, p.lat]));
-      this.map.fitBounds(bounds, { padding: 50, maxZoom: 15 });
+      this.map.fitBounds(bounds, { padding: 50, maxZoom: 12 });
     } else if (this.canvasFallback) {
       // For canvas, fitting bounds means re-calculating projection, which is done on each draw
       this._drawCanvasTrack();

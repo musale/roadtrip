@@ -21,11 +21,27 @@ class VideoComposer {
     this.isDualCamera = false;
     this.facingMode = 'environment';
 
+    this.offscreenCanvas = new OffscreenCanvas(VIDEO_WIDTH, VIDEO_HEIGHT);
+    this.offscreenCtx = this.offscreenCanvas.getContext('2d');
+
     // Low power mode detection
     this.lowPowerMode = false;
     this.lastFrameTime = 0;
     this.frameCount = 0;
     this.fpsCheckInterval = null;
+  }
+
+  _setupOffscreenCanvas() {
+    if (this.cameraFeed.videoWidth && this.cameraFeed.videoHeight) {
+      this.offscreenCanvas.width = this.cameraFeed.videoWidth;
+      this.offscreenCanvas.height = this.cameraFeed.videoHeight;
+    } else {
+      // Fallback if videoWidth/Height not immediately available
+      // This might need a slight delay or event listener for 'loadedmetadata'
+      this.offscreenCanvas.width = VIDEO_WIDTH; // Default to common resolution
+      this.offscreenCanvas.height = VIDEO_HEIGHT;
+    }
+    this.offscreenCtx = this.offscreenCanvas.getContext('2d');
   }
 
   async listCameras() {
@@ -54,6 +70,7 @@ class VideoComposer {
       this.videoTracks = this.stream.getVideoTracks();
       this.audioTrack = this.stream.getAudioTracks()[0];
       this.isDualCamera = false;
+      this._setupOffscreenCanvas();
       this._startFpsCheck();
       return true;
     } catch (error) {
@@ -90,6 +107,7 @@ class VideoComposer {
         this.cameraFeed.srcObject = this.stream;
         this.videoTracks = this.stream.getVideoTracks();
         this.isDualCamera = true;
+        this._setupOffscreenCanvas();
         this._startFpsCheck();
         return true;
       }
@@ -237,11 +255,29 @@ class VideoComposer {
   drawCameraFeedToCanvas() {
     if (!this.hudCtx || !this.cameraFeed || !this.cameraFeed.srcObject) return;
 
+    // Ensure offscreen canvas is correctly sized
+    this._setupOffscreenCanvas();
+
     // Clear the canvas before drawing the video frame
     this.hudCtx.clearRect(0, 0, this.hudCanvas.width, this.hudCanvas.height);
 
-    // Draw main camera feed
-    this.hudCtx.drawImage(this.cameraFeed, 0, 0, this.hudCanvas.width, this.hudCanvas.height);
+    // Draw video frame to offscreen canvas, mirrored
+    this.offscreenCtx.save();
+    this.offscreenCtx.scale(-1, 1); // Mirror horizontally
+    this.offscreenCtx.drawImage(this.cameraFeed, -this.offscreenCanvas.width, 0, this.offscreenCanvas.width, this.offscreenCanvas.height);
+    this.offscreenCtx.restore();
+
+    // Calculate dimensions to draw offscreen canvas to visible HUD canvas, maintaining aspect ratio (object-fit: contain)
+    const hRatio = this.hudCanvas.width / this.offscreenCanvas.width;
+    const vRatio = this.hudCanvas.height / this.offscreenCanvas.height;
+    const ratio = Math.min(hRatio, vRatio);
+
+    const newWidth = this.offscreenCanvas.width * ratio;
+    const newHeight = this.offscreenCanvas.height * ratio;
+    const x = (this.hudCanvas.width - newWidth) / 2;
+    const y = (this.hudCanvas.height - newHeight) / 2;
+
+    this.hudCtx.drawImage(this.offscreenCanvas, x, y, newWidth, newHeight);
 
     // If dual camera, draw PiP
     if (this.isDualCamera && this.videoTracks.length > 1) {
