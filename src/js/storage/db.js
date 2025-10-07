@@ -93,6 +93,18 @@ export async function clearVideoChunks() {
   });
 }
 
+export async function deleteVideoFromOpfs(filename) {
+  try {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry(filename);
+    console.log(`Deleted ${filename} from OPFS`);
+    return true;
+  } catch (error) {
+    console.error("Error deleting from OPFS:", error);
+    return false;
+  }
+}
+
 // OPFS (Origin Private File System) helpers for larger video files
 // This is a simplified example. Real-world OPFS usage for large files
 // would involve more complex stream writing and reading.
@@ -103,7 +115,7 @@ export async function writeVideoToOpfs(filename, blob) {
     const writable = await fileHandle.createWritable();
     await writable.write(blob);
     await writable.close();
-    console.log(`Wrote ${filename} to OPFS`);
+    console.log(`Successfully wrote ${filename} to OPFS.`);
     return true;
   } catch (error) {
     console.error("Error writing to OPFS:", error);
@@ -120,17 +132,5 @@ export async function readVideoFromOpfs(filename) {
   } catch (error) {
     console.error("Error reading from OPFS:", error);
     return null;
-  }
-}
-
-export async function deleteVideoFromOpfs(filename) {
-  try {
-    const root = await navigator.storage.getDirectory();
-    await root.removeEntry(filename);
-    console.log(`Deleted ${filename} from OPFS`);
-    return true;
-  } catch (error) {
-    console.error("Error deleting from OPFS:", error);
-    return false;
   }
 }

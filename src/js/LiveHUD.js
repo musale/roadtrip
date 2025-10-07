@@ -134,7 +134,9 @@ class LiveHUD {
     // Distance
     this.ctx.font = 'bold 40px monospace';
     this.ctx.textAlign = 'left';
-    this.ctx.fillText(`DIST: ${(this.distanceM / 1000).toFixed(2)} KM`, Math.floor(40), Math.floor(100));
+    this.ctx.fillText(`DIST: ${(this.distanceM / 1000).toFixed(2)}`, Math.floor(40), Math.floor(100));
+    this.ctx.font = '25px monospace'; // Smaller font for KM
+    this.ctx.fillText('KM', Math.floor(40), Math.floor(135)); // Position KM below the value
 
     // Elapsed Time
     const timeStr = new Date(this.elapsedMs).toISOString().substr(11, 8);
