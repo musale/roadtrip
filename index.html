@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RoadTrip</title>
+    <link rel="stylesheet" href="./css/styles.css">
+    <link rel="manifest" href="/src/pwa/manifest.webmanifest">
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/src/pwa/sw.js')
+            .then(registration => {
+              console.log('SW registered: ', registration);
+            })
+            .catch(registrationError => {
+              console.log('SW registration failed: ', registrationError);
+            });
+        });
+      }
+    </script>
+    <link href="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.js"></script>
+  </head>
+  <body class="bg-bg text-text-primary font-mono">
+    <div id="app" class="flex flex-col h-screen">
+      <header class="p-4 bg-surface shadow-neon">
+        <nav class="flex justify-between items-center">
+          <h1 class="text-2xl text-brand animate-glowPulse">RoadTrip</h1>
+          <div class="flex space-x-4">
+            <button id="modeToggle" class="px-4 py-2 bg-accent text-bg rounded-DEFAULT focus-visible:outline-accent">Mode: Camera</button>
+            <button id="captureToggle" class="px-4 py-2 bg-accent text-bg rounded-DEFAULT focus-visible:outline-accent">Capture: Single</button>
+            <button id="facingToggle" class="px-4 py-2 bg-accent text-bg rounded-DEFAULT focus-visible:outline-accent">Facing: Environment</button>
+          </div>
+        </nav>
+      </header>
+
+      <main class="flex-1 relative flex items-center justify-center bg-black">
+        <!-- Camera Feed / Map Container -->
+        <video id="cameraFeed" class="absolute inset-0 w-full h-full object-contain" autoplay playsinline muted></video>
+        <div id="mapContainer" class="absolute inset-0 w-full h-full hidden"></div>
+
+        <!-- HUD Canvas Overlay -->
+        <canvas id="hudCanvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+
+        <!-- ARIA Live Region for HUD -->
+        <div id="hud-aria" aria-live="polite" class="sr-only"></div>
+
+        <!-- Controls -->
+        <div class="absolute bottom-4 left-4 right-4 flex justify-center space-x-4">
+          <button id="startButton" class="px-8 py-4 bg-brand text-bg rounded-full text-xl font-bold shadow-neon focus-visible:outline-brand">Start</button>
+          <button id="stopButton" class="px-8 py-4 bg-accent text-bg rounded-full text-xl font-bold shadow-neon focus-visible:outline-accent hidden">Stop</button>
+        </div>
+      </main>
+
+      <footer class="p-4 bg-surface text-sm text-center">
+        <section id="library" class="mt-4">
+          <h2 class="text-xl text-brand">Past Trips</h2>
+          <ul id="tripList" class="mt-2 max-h-48 overflow-y-auto"></ul>
+        </section>
+        <div id="storageMeter" class="mt-2 text-text-primary">Storage: Estimating...</div>
+      </footer>
+    </div>
+    <script type="module" src="/src/js/app.js"></script>
+  </body>
+</html>

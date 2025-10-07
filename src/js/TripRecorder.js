@@ -1,357 +1,266 @@
-/**
- * TripRecorder - A minimal JavaScript module for recording GPS trips
- * Supports trip recording, geolocation tracking, and data export in GPX/GeoJSON formats
- */
+// src/TripRecorder.js
+
+import { addTrip } from './storage/db.js';
+
+const HAVERSINE_RADIUS_KM = 6371;
 
 class TripRecorder {
-    constructor() {
-        this.currentTrip = null;
-        this.watchId = null;
-        this.isTracking = false;
+  constructor() {
+    this.currentTrip = null;
+    this.watchId = null;
+    this.points = [];
+    this.startTime = null;
+    this.lastPointTime = null;
+    this.distanceM = 0;
+    this.speedKph = 0;
+    this.headingDeg = 0;
+    this.movingTime = 0;
+    this.lastPosition = null;
+    this.speedReadings = [];
+    this.maxSpeedKph = 0;
+  }
+
+  startTrip() {
+    if (this.watchId) {
+      console.warn("Trip already in progress.");
+      return;
     }
 
-    /**
-     * Generate a simple UUID v4
-     */
-    generateUUID() {
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-            const r = Math.random() * 16 | 0;
-            const v = c === 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-        });
+    this.currentTrip = {
+      id: Date.now(),
+      startedAt: Date.now(),
+      endedAt: null,
+      points: [],
+      stats: {
+        distanceM: 0,
+        durationMs: 0,
+        avgKph: 0,
+        maxKph: 0,
+        movingTime: 0,
+      },
+    };
+    this.points = [];
+    this.startTime = Date.now();
+    this.lastPointTime = Date.now();
+    this.distanceM = 0;
+    this.speedKph = 0;
+    this.headingDeg = 0;
+    this.movingTime = 0;
+    this.lastPosition = null;
+    this.speedReadings = [];
+    this.maxSpeedKph = 0;
+
+    const options = {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 5000,
+    };
+
+    this.watchId = navigator.geolocation.watchPosition(
+      this._handlePosition.bind(this),
+      this._handlePositionError.bind(this),
+      options
+    );
+    console.log("Trip started.");
+  }
+
+  async stopTrip() {
+    if (!this.watchId) {
+      console.warn("No trip in progress.");
+      return;
     }
 
-    /**
-     * Calculate Haversine distance between two points in meters
-     */
-    calculateDistance(lat1, lon1, lat2, lon2) {
-        const R = 6371000; // Earth's radius in meters
-        const dLat = this.toRadians(lat2 - lat1);
-        const dLon = this.toRadians(lon2 - lon1);
-        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(this.toRadians(lat1)) * Math.cos(this.toRadians(lat2)) *
-                Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c;
-    }
+    navigator.geolocation.clearWatch(this.watchId);
+    this.watchId = null;
+    this.currentTrip.endedAt = Date.now();
+    this.currentTrip.points = this.points;
+    this.currentTrip.stats.distanceM = this.distanceM;
+    this.currentTrip.stats.durationMs = this.currentTrip.endedAt - this.startTime;
+    this.currentTrip.stats.maxKph = this.maxSpeedKph;
+    this.currentTrip.stats.movingTime = this.movingTime;
+    this.currentTrip.stats.avgKph = this.distanceM > 0 ? (this.distanceM / 1000) / (this.movingTime / (1000 * 60 * 60)) : 0;
 
-    /**
-     * Convert degrees to radians
-     */
-    toRadians(degrees) {
-        return degrees * (Math.PI / 180);
-    }
+    await addTrip(this.currentTrip);
+    console.log("Trip stopped and saved:", this.currentTrip);
 
-    /**
-     * Calculate speed using moving average of last 3 points
-     */
-    calculateSmoothedSpeed(points) {
-        if (points.length < 2) return 0;
-        
-        const recentPoints = points.slice(-3); // Get last 3 points
-        let totalSpeed = 0;
-        let validSpeeds = 0;
+    const tripToReturn = { ...this.currentTrip };
+    this.currentTrip = null; // Clear current trip after saving
+    return tripToReturn;
+  }
 
-        for (let i = 1; i < recentPoints.length; i++) {
-            const prev = recentPoints[i - 1];
-            const curr = recentPoints[i];
-            const distance = this.calculateDistance(prev.lat, prev.lon, curr.lat, curr.lon);
-            const timeDelta = (curr.timestamp - prev.timestamp) / 1000; // Convert to seconds
-            
-            if (timeDelta > 0) {
-                totalSpeed += distance / timeDelta; // m/s
-                validSpeeds++;
-            }
+  _handlePosition(position) {
+    const { latitude, longitude, accuracy, speed, heading, altitude } = position.coords;
+    const t = Date.now();
+
+    const point = {
+      t,
+      lat: latitude,
+      lon: longitude,
+      acc: accuracy,
+      alt: altitude,
+    };
+
+    if (this.lastPosition) {
+      const { distance, bearing } = this._haversineDistance(
+        this.lastPosition.lat,
+        this.lastPosition.lon,
+        latitude,
+        longitude
+      );
+      this.distanceM += distance;
+
+      const timeDiffSeconds = (t - this.lastPointTime) / 1000;
+      if (timeDiffSeconds > 0) {
+        const currentSpeedMps = distance / timeDiffSeconds;
+        this.speedKph = currentSpeedMps * 3.6; // m/s to km/h
+        this.speedReadings.push(this.speedKph);
+        if (this.speedReadings.length > 10) {
+          this.speedReadings.shift(); // Keep last 10 readings for moving average
         }
+        point.v = this.speedKph; // Store instantaneous speed
+        this.maxSpeedKph = Math.max(this.maxSpeedKph, this.speedKph);
 
-        return validSpeeds > 0 ? totalSpeed / validSpeeds : 0;
-    }
-
-    /**
-     * Create a new trip data structure
-     */
-    createTrip() {
-        return {
-            id: this.generateUUID(),
-            startTime: Date.now(),
-            endTime: null,
-            points: [],
-            stats: {
-                distanceMeters: 0,
-                durationMs: 0,
-                avgSpeedKph: 0
-            }
-        };
-    }
-
-    /**
-     * Create a new point data structure
-     */
-    createPoint(position, speed = 0) {
-        return {
-            timestamp: Date.now(),
-            lat: position.coords.latitude,
-            lon: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-            speed: speed // m/s
-        };
-    }
-
-    /**
-     * Handle geolocation position updates
-     */
-    handlePositionUpdate(position) {
-        if (!this.currentTrip || !this.isTracking) return;
-
-        // Ignore inaccurate readings
-        if (position.coords.accuracy > 50) {
-            console.log('Ignoring inaccurate position:', position.coords.accuracy);
-            return;
+        // Update moving time if speed is above a threshold (e.g., 1 km/h)
+        if (this.speedKph > 1) {
+          this.movingTime += (t - this.lastPointTime);
         }
-
-        const speed = this.calculateSmoothedSpeed(this.currentTrip.points);
-        const point = this.createPoint(position, speed);
-        
-        this.currentTrip.points.push(point);
-        this.updateTripStats();
-        
-        console.log('Point recorded:', {
-            lat: point.lat,
-            lon: point.lon,
-            accuracy: point.accuracy,
-            speed: point.speed.toFixed(2) + ' m/s'
-        });
+      }
+      this.headingDeg = heading !== null ? heading : bearing; // Use device heading if available, else bearing
+      point.hdg = this.headingDeg;
+    } else {
+      point.v = 0;
+      point.hdg = 0;
     }
 
-    /**
-     * Handle geolocation errors
-     */
-    handlePositionError(error) {
-        console.error('Geolocation error:', error.message);
+    this.points.push(point);
+    this.lastPosition = { lat: latitude, lon: longitude };
+    this.lastPointTime = t;
+
+    // console.log("New point:", point);
+  }
+
+  _handlePositionError(error) {
+    console.error("Geolocation error:", error);
+    // TODO: Display user-friendly error message
+  }
+
+  _haversineDistance(lat1, lon1, lat2, lon2) {
+    const toRad = (value) => (value * Math.PI) / 180;
+    const R = HAVERSINE_RADIUS_KM * 1000; // in meters
+
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const l1 = toRad(lat1);
+    const l2 = toRad(lat2);
+
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(l1) * Math.cos(l2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c; // Distance in meters
+
+    // Calculate bearing (heading)
+    const y = Math.sin(dLon) * Math.cos(l2);
+    const x = Math.cos(l1) * Math.sin(l2) - Math.sin(l1) * Math.cos(l2) * Math.cos(dLon);
+    const bearing = (toRad(360) + Math.atan2(y, x)) % toRad(360);
+    const bearingDeg = (bearing * 180) / Math.PI;
+
+    return { distance, bearing: bearingDeg };
+  }
+
+  getCurrentTrip() {
+    if (!this.currentTrip) return null;
+
+    const durationMs = Date.now() - this.startTime;
+    const currentAvgKph = this.distanceM > 0 ? (this.distanceM / 1000) / (this.movingTime / (1000 * 60 * 60)) : 0;
+
+    // Simple moving average for speed smoothing
+    const smoothedSpeedKph = this.speedReadings.length > 0
+      ? this.speedReadings.reduce((sum, s) => sum + s, 0) / this.speedReadings.length
+      : 0;
+
+    return {
+      ...this.currentTrip,
+      points: this.points,
+      stats: {
+        distanceM: this.distanceM,
+        durationMs: durationMs,
+        avgKph: currentAvgKph,
+        maxKph: this.maxSpeedKph,
+        movingTime: this.movingTime,
+      },
+      live: {
+        speedKph: smoothedSpeedKph,
+        headingDeg: this.headingDeg,
+        elapsedMs: durationMs,
+      }
+    };
+  }
+
+  exportGPX(trip) {
+    if (!trip || !trip.points || trip.points.length === 0) {
+      return null;
     }
 
-    /**
-     * Update trip statistics
-     */
-    updateTripStats() {
-        if (!this.currentTrip || this.currentTrip.points.length < 2) return;
+    let gpx = '<gpx version="1.1" creator="RoadTrip" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">';
+    gpx += `<trk><name>RoadTrip - ${new Date(trip.startedAt).toLocaleString()}</name><trkseg>`;
 
-        const points = this.currentTrip.points;
-        let totalDistance = 0;
+    trip.points.forEach(p => {
+      gpx += `<trkpt lat="${p.lat}" lon="${p.lon}">`;
+      gpx += `<time>${new Date(p.t).toISOString()}</time>`;
+      if (p.alt !== undefined) gpx += `<ele>${p.alt}</ele>`;
+      if (p.v !== undefined) gpx += `<speed>${p.v / 3.6}</speed>`; // km/h to m/s
+      if (p.hdg !== undefined) gpx += `<course>${p.hdg}</course>`;
+      gpx += `</trkpt>`;
+    });
 
-        // Calculate total distance
-        for (let i = 1; i < points.length; i++) {
-            const prev = points[i - 1];
-            const curr = points[i];
-            totalDistance += this.calculateDistance(prev.lat, prev.lon, curr.lat, curr.lon);
-        }
+    gpx += `</trkseg></trk></gpx>`;
+    return new Blob([gpx], { type: 'application/gpx+xml' });
+  }
 
-        // Calculate duration
-        const duration = Date.now() - this.currentTrip.startTime;
-
-        // Calculate average speed in km/h
-        const avgSpeedKph = duration > 0 ? (totalDistance / 1000) / (duration / 3600000) : 0;
-
-        this.currentTrip.stats = {
-            distanceMeters: totalDistance,
-            durationMs: duration,
-            avgSpeedKph: avgSpeedKph
-        };
+  exportGeoJSON(trip) {
+    if (!trip || !trip.points || trip.points.length === 0) {
+      return null;
     }
 
-    /**
-     * Start recording a new trip
-     */
-    startTrip() {
-        if (this.isTracking) {
-            console.warn('Trip already in progress');
-            return this.currentTrip;
-        }
-
-        if (!navigator.geolocation) {
-            throw new Error('Geolocation is not supported by this browser');
-        }
-
-        this.currentTrip = this.createTrip();
-        this.isTracking = true;
-
-        const options = {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
-        };
-
-        this.watchId = navigator.geolocation.watchPosition(
-            (position) => this.handlePositionUpdate(position),
-            (error) => this.handlePositionError(error),
-            options
-        );
-
-        console.log('Trip started:', this.currentTrip.id);
-        return this.currentTrip;
-    }
-
-    /**
-     * Stop recording the current trip
-     */
-    stopTrip() {
-        if (!this.isTracking || !this.currentTrip) {
-            console.warn('No trip in progress');
-            return null;
-        }
-
-        this.isTracking = false;
-        
-        if (this.watchId !== null) {
-            navigator.geolocation.clearWatch(this.watchId);
-            this.watchId = null;
-        }
-
-        this.currentTrip.endTime = Date.now();
-        this.updateTripStats();
-
-        // Optional: Save to localStorage
-        this.saveToLocalStorage();
-
-        console.log('Trip stopped:', this.currentTrip.id);
-        console.log('Final stats:', this.currentTrip.stats);
-
-        return this.currentTrip;
-    }
-
-    /**
-     * Get the current active trip
-     */
-    getCurrentTrip() {
-        return this.currentTrip;
-    }
-
-    /**
-     * Export trip data as GPX XML string
-     */
-    exportGPX() {
-        if (!this.currentTrip || this.currentTrip.points.length === 0) {
-            throw new Error('No trip data to export');
-        }
-
-        const trip = this.currentTrip;
-        const startDate = new Date(trip.startTime).toISOString();
-        
-        let gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="TripRecorder" xmlns="http://www.topografix.com/GPX/1/1">
-  <metadata>
-    <name>Trip ${trip.id}</name>
-    <time>${startDate}</time>
-  </metadata>
-  <trk>
-    <name>Trip ${trip.id}</name>
-    <trkseg>`;
-
-        trip.points.forEach(point => {
-            const timestamp = new Date(point.timestamp).toISOString();
-            gpx += `
-      <trkpt lat="${point.lat}" lon="${point.lon}">
-        <time>${timestamp}</time>
-        <extensions>
-          <speed>${point.speed}</speed>
-          <accuracy>${point.accuracy}</accuracy>
-        </extensions>
-      </trkpt>`;
-        });
-
-        gpx += `
-    </trkseg>
-  </trk>
-</gpx>`;
-
-        return gpx;
-    }
-
-    /**
-     * Export trip data as GeoJSON FeatureCollection
-     */
-    exportGeoJSON() {
-        if (!this.currentTrip || this.currentTrip.points.length === 0) {
-            throw new Error('No trip data to export');
-        }
-
-        const trip = this.currentTrip;
-        
-        const lineString = {
-            type: "Feature",
-            properties: {
-                name: `Trip ${trip.id}`,
-                startTime: trip.startTime,
-                endTime: trip.endTime,
-                stats: trip.stats
-            },
-            geometry: {
-                type: "LineString",
-                coordinates: trip.points.map(point => [point.lon, point.lat])
-            }
-        };
-
-        const points = trip.points.map((point, index) => ({
-            type: "Feature",
-            properties: {
-                timestamp: point.timestamp,
-                speed: point.speed,
-                accuracy: point.accuracy,
-                pointIndex: index
-            },
-            geometry: {
-                type: "Point",
-                coordinates: [point.lon, point.lat]
-            }
-        }));
-
-        return {
-            type: "FeatureCollection",
-            features: [lineString, ...points]
-        };
-    }
-
-    /**
-     * Save trip data to localStorage
-     */
-    saveToLocalStorage() {
-        if (!this.currentTrip) return;
-
-        try {
-            const trips = this.getTripsFromLocalStorage();
-            trips.push(this.currentTrip);
-            localStorage.setItem('tripRecorder_trips', JSON.stringify(trips));
-            console.log('Trip saved to localStorage');
-        } catch (error) {
-            console.error('Failed to save trip to localStorage:', error);
-        }
-    }
-
-    /**
-     * Get all trips from localStorage
-     */
-    getTripsFromLocalStorage() {
-        try {
-            const tripsData = localStorage.getItem('tripRecorder_trips');
-            return tripsData ? JSON.parse(tripsData) : [];
-        } catch (error) {
-            console.error('Failed to load trips from localStorage:', error);
-            return [];
-        }
-    }
-
-    /**
-     * Clear all trips from localStorage
-     */
-    clearLocalStorage() {
-        try {
-            localStorage.removeItem('tripRecorder_trips');
-            console.log('Trip data cleared from localStorage');
-        } catch (error) {
-            console.error('Failed to clear localStorage:', error);
-        }
-    }
+    const geojson = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {
+            name: `RoadTrip - ${new Date(trip.startedAt).toLocaleString()}`,
+            startedAt: new Date(trip.startedAt).toISOString(),
+            endedAt: new Date(trip.endedAt).toISOString(),
+            distanceM: trip.stats.distanceM,
+            durationMs: trip.stats.durationMs,
+            avgKph: trip.stats.avgKph,
+            maxKph: trip.stats.maxKph,
+            movingTime: trip.stats.movingTime,
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: trip.points.map(p => [p.lon, p.lat, p.alt || 0]),
+          },
+        },
+        // Optionally add points as individual features
+        ...trip.points.map(p => ({
+          type: 'Feature',
+          properties: {
+            time: new Date(p.t).toISOString(),
+            speedKph: p.v,
+            headingDeg: p.hdg,
+            accuracy: p.acc,
+            altitude: p.alt,
+          },
+          geometry: {
+            type: 'Point',
+            coordinates: [p.lon, p.lat, p.alt || 0],
+          },
+        }))
+      ],
+    };
+    return new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
+  }
 }
 
-// Export the TripRecorder class
 export default TripRecorder;

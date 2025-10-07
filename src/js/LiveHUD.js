@@ -1,618 +1,170 @@
-/**
- * LiveHUD - Real-time trip stats overlay component for mobile PWA
- * 
- * High-performance canvas-based HUD that renders speed, time, distance
- * with optional heading and audio VU meter. Optimized for mobile devices
- * with DPR scaling and 60fps rendering.
- * 
- * Usage:
- *   const hud = new LiveHUD({ showHeading: true, showVU: true });
- *   hud.attach(canvasElement);
- *   hud.start();
- *   hud.update({ speedKph: 25.5, elapsedMs: 60000, distanceM: 1200 });
- */
+// src/LiveHUD.js
 
-// Formatting utility functions
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function round1(value) {
-  return Math.round(value * 10) / 10;
-}
-
-function formatTime(elapsedMs) {
-  if (!elapsedMs || elapsedMs < 0) return '00:00:00';
-  
-  const totalSeconds = Math.floor(elapsedMs / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-}
-
-function kmStr(distanceM) {
-  if (!distanceM || distanceM < 0) return '0.00';
-  const km = distanceM / 1000;
-  return km.toFixed(2);
-}
-
-function compassFromDegrees(degrees) {
-  if (typeof degrees !== 'number' || degrees < 0) return 'N';
-  
-  const normalized = degrees % 360;
-  const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 
-                     'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
-  const index = Math.round(normalized / 22.5) % 16;
-  return directions[index];
-}
-
-// Polyfill for roundRect if not available
-function addRoundRectPolyfill(ctx) {
-  if (!ctx.roundRect) {
-    ctx.roundRect = function(x, y, width, height, radius) {
-      this.beginPath();
-      this.moveTo(x + radius, y);
-      this.arcTo(x + width, y, x + width, y + height, radius);
-      this.arcTo(x + width, y + height, x, y + height, radius);
-      this.arcTo(x, y + height, x, y, radius);
-      this.arcTo(x, y, x + width, y, radius);
-      this.closePath();
-    };
-  }
-}
-
-/**
- * LiveHUD Component Class
- * Renders real-time trip statistics on a canvas overlay
- */
 class LiveHUD {
-  constructor(opts = {}) {
-    // Configuration with mobile-optimized defaults
-    this.width = opts.width || window.innerWidth;
-    this.height = opts.height || window.innerHeight;
-    this.dpr = opts.dpr || window.devicePixelRatio || 1;
-    this.showHeading = opts.showHeading || false;
-    this.showVU = opts.showVU || false;
-    
-    // Theme colors optimized for overlay visibility
-    this.theme = {
-      fg: '#ffffff',
-      shadow: '#000000',
-      accent: '#00ff88',
-      danger: '#ff4444',
-      warning: '#ffaa00',
-      ...opts.theme
-    };
-    
-    // Canvas and rendering context
+  constructor() {
     this.canvas = null;
     this.ctx = null;
-    
-    // Animation and state management
-    this.isRunning = false;
-    this.animationId = null;
-    this.lastFrameTime = 0;
-    this.frameCount = 0;
-    
-    // Trip data state
-    this.data = {
-      speedKph: 0,
-      elapsedMs: 0,
-      distanceM: 0,
-      headingDeg: 0,
-      vuLevel: 0
-    };
-    
-    // Smooth VU level for audio meter animation
-    this.smoothVU = 0;
-    this.vuDecay = 0.85;
-    
-    // Background compositing source
-    this.backgroundSrc = null;
-    
-    // Pre-computed layout and fonts (performance optimization)
-    this.layout = null;
-    this.fonts = null;
-    
-    // Initialize pre-computed values
-    this._initializeFonts();
-    this._setupResizeHandler();
+    this.animationFrameId = null;
+    this.hudAriaElement = document.getElementById('hud-aria');
+
+    // Default HUD values
+    this.speedKph = 0;
+    this.elapsedMs = 0;
+    this.distanceM = 0;
+    this.headingDeg = 0;
+
+    // Colors from CSS variables
+    this.brandColor = '#00F5D4'; // Default
+    this.textColor = '#E0E0E0'; // Default
+    this.bgColor = 'rgba(13, 13, 13, 0.5)'; // Default with transparency
+
+    this._readCssVariables();
+    window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener(
+      'change', this._handleReducedMotionChange.bind(this)
+    );
+    this.prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
-  
-    /**
-   * Initialize font configuration for Apple-inspired design
-   * Optimized for mobile responsiveness and proper text fitting
-   * @private
-   */
-  _initializeFonts() {
-    // More conservative base font size for mobile
-    const baseFontSize = Math.max(12, Math.min(this.width, this.height) * 0.024);
-    
-    this.fonts = {
-      // Primary metric values - sized to fit containers
-      valueXLarge: `700 ${baseFontSize * 2.2}px -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif`,
-      valueLarge: `600 ${baseFontSize * 1.6}px -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif`,
-      valueMedium: `600 ${baseFontSize * 1.3}px -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif`,
-      // Labels - subtle, consistent
-      label: `500 ${baseFontSize * 0.7}px -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif`,
-      labelSmall: `400 ${baseFontSize * 0.6}px -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif`
-    };
+
+  _readCssVariables() {
+    const style = getComputedStyle(document.documentElement);
+    this.brandColor = style.getPropertyValue('--color-brand').trim() || this.brandColor;
+    this.textColor = style.getPropertyValue('--color-text-primary').trim() || this.textColor;
+    this.bgColor = style.getPropertyValue('--color-bg').trim() || this.bgColor;
   }
-  
-  /**
-   * Calculate Apple-inspired layout with safe areas and edge positioning
-   * Optimized for mobile devices with proper card sizing and alignment
-   * @private
-   */
-  _calculateLayout() {
-    // Responsive safe areas based on screen size
-    const isMobile = this.width < 768;
-    const topBarHeight = isMobile ? Math.max(90, this.height * 0.14) : Math.max(100, this.height * 0.12);
-    const bottomBarHeight = isMobile ? Math.max(100, this.height * 0.15) : Math.max(140, this.height * 0.18);
-    const safeHorizontal = Math.max(16, this.width * 0.04);
-    
-    // Calculate responsive card dimensions
-    const cardWidth = Math.min(140, (this.width - safeHorizontal * 3) / 2); // Two cards per row with spacing
-    const cardHeight = isMobile ? 70 : 80;
-    
-    // Position HUD elements in grid layout for mobile
-    const availableHeight = this.height - topBarHeight - bottomBarHeight;
-    const middleStart = topBarHeight + (availableHeight * 0.05); // 5% buffer from top bar
-    const middleEnd = this.height - bottomBarHeight - (availableHeight * 0.05); // 5% buffer from bottom bar
-    
-    this.layout = {
-      // Top row - Speed and Time side by side
-      speed: {
-        x: safeHorizontal,
-        y: middleStart,
-        containerWidth: cardWidth,
-        containerHeight: cardHeight
-      },
-      time: {
-        x: this.width - safeHorizontal - cardWidth,
-        y: middleStart,
-        containerWidth: cardWidth,
-        containerHeight: cardHeight
-      },
-      // Bottom row - Distance and Heading side by side
-      distance: {
-        x: safeHorizontal,
-        y: middleEnd - cardHeight,
-        containerWidth: cardWidth,
-        containerHeight: cardHeight
-      },
-      heading: {
-        x: this.width - safeHorizontal - cardWidth,
-        y: middleEnd - cardHeight,
-        containerWidth: cardWidth,
-        containerHeight: cardHeight
-      },
-      // VU meter spans width
-      vu: { 
-        x: safeHorizontal, 
-        y: middleEnd - 20,
-        width: this.width - (safeHorizontal * 2),
-        height: 16
-      }
-    };
+
+  _handleReducedMotionChange(event) {
+    this.prefersReducedMotion = event.matches;
+    // Re-render or adjust animations if necessary
   }
-  
-  /**
-   * Handle window resize to maintain responsive layout
-   */
-  _setupResizeHandler() {
-    const handleResize = () => {
-      if (this.canvas) {
-        this.width = window.innerWidth;
-        this.height = window.innerHeight;
-        this._initializeFonts();
-        this._resizeCanvas();
-      }
-    };
-    
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', () => {
-      setTimeout(handleResize, 100); // Delay for orientation change
-    });
+
+  attach(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this._resizeCanvas();
+    window.addEventListener('resize', this._resizeCanvas.bind(this));
   }
-  
-  /**
-   * Resize canvas to match current viewport
-   */
+
   _resizeCanvas() {
     if (!this.canvas) return;
-    
-    // Update canvas size
-    this.canvas.width = this.width * this.dpr;
-    this.canvas.height = this.height * this.dpr;
-    this.canvas.style.width = `${this.width}px`;
-    this.canvas.style.height = `${this.height}px`;
-    
-    // Reset context and scale for DPR
-    this.ctx.scale(this.dpr, this.dpr);
-    this.ctx.textBaseline = 'top';
-    this.ctx.imageSmoothingEnabled = false;
-    
-    // Recalculate layout
-    this._calculateLayout();
+    // Internal resolution 1280x720, then scale with DPR
+    const internalWidth = 1280;
+    const internalHeight = 720;
+    const dpr = window.devicePixelRatio || 1;
+
+    this.canvas.style.width = '100%';
+    this.canvas.style.height = '100%';
+    this.canvas.width = internalWidth * dpr;
+    this.canvas.height = internalHeight * dpr;
+    this.ctx.scale(dpr, dpr);
+
+    // Store internal dimensions for drawing calculations
+    this.internalWidth = internalWidth;
+    this.internalHeight = internalHeight;
   }
-  
-  /**
-   * Attach HUD to a canvas element
-   * @param {HTMLCanvasElement} canvasEl - Target canvas element
-   */
-  attach(canvasEl) {
-    if (!canvasEl || !(canvasEl instanceof HTMLCanvasElement)) {
-      throw new Error('LiveHUD.attach() requires a valid HTMLCanvasElement');
-    }
-    
-    this.canvas = canvasEl;
-    this.ctx = canvasEl.getContext('2d', { 
-      alpha: true,
-      desynchronized: true // Better performance on some devices
-    });
-    
-    // Add roundRect polyfill if needed
-    addRoundRectPolyfill(this.ctx);
-    
-    this._resizeCanvas();
-  }
-  
-  /**
-   * Start HUD rendering loop
-   */
+
   start() {
-    if (this.isRunning || !this.canvas) return;
-    
-    this.isRunning = true;
-    this.lastFrameTime = performance.now();
-    this.frameCount = 0;
-    this._scheduleFrame();
+    if (!this.canvas || !this.ctx) {
+      console.error("HUD canvas not attached.");
+      return;
+    }
+    this.animationFrameId = requestAnimationFrame(this._draw.bind(this));
   }
-  
-  /**
-   * Stop HUD rendering loop
-   */
+
   stop() {
-    this.isRunning = false;
-    if (this.animationId) {
-      cancelAnimationFrame(this.animationId);
-      this.animationId = null;
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
     }
   }
-  
-  /**
-   * Update trip data
-   * @param {Object} newData - Trip data object
-   * @param {number} [newData.speedKph] - Speed in km/h
-   * @param {number} [newData.elapsedMs] - Elapsed time in milliseconds
-   * @param {number} [newData.distanceM] - Distance in meters
-   * @param {number} [newData.headingDeg] - Heading in degrees (0-360)
-   * @param {number} [newData.vuLevel] - Audio VU level (0-1)
-   */
-  update(newData) {
-    // Validate and update speed
-    if (typeof newData.speedKph === 'number' && !isNaN(newData.speedKph)) {
-      this.data.speedKph = Math.max(0, newData.speedKph);
-    }
-    
-    // Validate and update elapsed time
-    if (typeof newData.elapsedMs === 'number' && !isNaN(newData.elapsedMs)) {
-      this.data.elapsedMs = Math.max(0, newData.elapsedMs);
-    }
-    
-    // Validate and update distance
-    if (typeof newData.distanceM === 'number' && !isNaN(newData.distanceM)) {
-      this.data.distanceM = Math.max(0, newData.distanceM);
-    }
-    
-    // Validate and update heading
-    if (typeof newData.headingDeg === 'number' && !isNaN(newData.headingDeg)) {
-      this.data.headingDeg = newData.headingDeg % 360;
-    }
-    
-    // Validate and update VU level with smoothing
-    if (typeof newData.vuLevel === 'number' && !isNaN(newData.vuLevel)) {
-      const clampedVU = clamp(newData.vuLevel, 0, 1);
-      this.smoothVU = this.vuDecay * this.smoothVU + (1 - this.vuDecay) * clampedVU;
+
+  update({ speedKph, elapsedMs, distanceM, headingDeg }) {
+    this.speedKph = speedKph !== undefined ? speedKph : this.speedKph;
+    this.elapsedMs = elapsedMs !== undefined ? elapsedMs : this.elapsedMs;
+    this.distanceM = distanceM !== undefined ? distanceM : this.distanceM;
+    this.headingDeg = headingDeg !== undefined ? headingDeg : this.headingDeg;
+
+    this._mirrorToAria();
+  }
+
+  _mirrorToAria() {
+    if (this.hudAriaElement) {
+      const speed = this.speedKph.toFixed(1);
+      const distance = (this.distanceM / 1000).toFixed(2);
+      const time = new Date(this.elapsedMs).toISOString().substr(11, 8);
+      this.hudAriaElement.textContent = `Speed: ${speed} kilometers per hour, Distance: ${distance} kilometers, Time: ${time}, Heading: ${this.headingDeg.toFixed(0)} degrees.`;
     }
   }
-  
-  /**
-   * Set background source for compositing
-   * @param {HTMLVideoElement|HTMLCanvasElement|HTMLImageElement} src - Background source
-   */
-  drawBackgroundFrame(src) {
-    this.backgroundSrc = src;
+
+  drawBackgroundFrame(videoEl) {
+    if (!this.ctx || !videoEl) return;
+
+    // Clear the canvas
+    this.ctx.clearRect(0, 0, this.internalWidth, this.internalHeight);
+
+    // Draw the video frame
+    this.ctx.drawImage(videoEl, 0, 0, this.internalWidth, this.internalHeight);
   }
-  
-  /**
-   * Schedule next animation frame
-   * @private
-   */
-  _scheduleFrame() {
-    if (!this.isRunning) return;
-    
-    this.animationId = requestAnimationFrame((timestamp) => {
-      this._renderFrame(timestamp);
-      this._scheduleFrame();
-    });
-  }
-  
-  /**
-   * Render single frame with Apple-inspired design
-   * @private
-   */
-  _renderFrame(timestamp) {
+
+  _draw() {
     if (!this.ctx) return;
-    
-    const deltaTime = timestamp - this.lastFrameTime;
-    this.lastFrameTime = timestamp;
-    this.frameCount++;
-    
-    // Clear canvas
+
+    // Clear previous HUD elements (assuming drawBackgroundFrame handles the full clear)
+    // If not drawing video, clear the whole canvas here.
+
     this.ctx.save();
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    
-    // Draw background if provided
-    if (this.backgroundSrc) {
-      try {
-        this.ctx.drawImage(this.backgroundSrc, 0, 0, this.canvas.width, this.canvas.height);
-      } catch (e) {
-        // Silently handle invalid background source
-      }
+
+    // Apply neon glow effect (optional, based on prefers-reduced-motion)
+    if (!this.prefersReducedMotion) {
+      this.ctx.shadowColor = this.brandColor;
+      this.ctx.shadowBlur = 15;
     }
-    
-    this.ctx.restore();
-    
-    // Render HUD elements with modern design
-    this._renderMetricCard('speed');
-    this._renderMetricCard('time');
-    this._renderMetricCard('distance');
-    
-    if (this.showHeading) {
-      this._renderMetricCard('heading');
-    }
-    
-    if (this.showVU) {
-      this._renderVUMeter();
-    }
-  }
-  
-  /**
-   * Render a metric card with Apple-inspired design
-   * @private
-   */
-  _renderMetricCard(type) {
-    const layout = this.layout[type];
-    if (!layout) return;
-    
-    // Draw semi-transparent background with rounded corners
-    this.ctx.save();
-    
-    // Create rounded rectangle background
-    const padding = 12;
-    const radius = 12;
-    const bgX = layout.x - padding;
-    const bgY = layout.y - padding;
-    const bgWidth = layout.containerWidth + (padding * 2);
-    const bgHeight = layout.containerHeight + (padding * 2);
-    
-    // Background with blur effect simulation
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+
+    this.ctx.fillStyle = this.brandColor;
+    this.ctx.strokeStyle = this.brandColor;
+    this.ctx.lineWidth = 2;
+    this.ctx.textBaseline = 'top'; // Ensure consistent text baseline
+
+    // Speed
+    this.ctx.font = 'bold 80px monospace';
+    this.ctx.textAlign = 'right';
+    this.ctx.fillText(`${this.speedKph.toFixed(0)}`, Math.floor(this.internalWidth - 40), Math.floor(100));
+    this.ctx.font = '30px monospace';
+    this.ctx.fillText('KPH', Math.floor(this.internalWidth - 40), Math.floor(140));
+
+    // Distance
+    this.ctx.font = 'bold 40px monospace';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText(`DIST: ${(this.distanceM / 1000).toFixed(2)}`, Math.floor(40), Math.floor(100));
+    this.ctx.font = '25px monospace'; // Smaller font for KM
+    this.ctx.fillText('KM', Math.floor(40), Math.floor(135)); // Position KM below the value
+
+    // Elapsed Time
+    const timeStr = new Date(this.elapsedMs).toISOString().substr(11, 8);
+    this.ctx.fillText(`TIME: ${timeStr}`, Math.floor(40), Math.floor(150));
+
+    // Heading (simple compass)
+    this.ctx.font = 'bold 40px monospace';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(`HDG: ${this.headingDeg.toFixed(0)}°`, Math.floor(this.internalWidth / 2), Math.floor(80));
+
+    // Draw a simple heading indicator
     this.ctx.beginPath();
-    this.ctx.roundRect(bgX, bgY, bgWidth, bgHeight, radius);
-    this.ctx.fill();
-    
-    // Subtle border
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-    this.ctx.lineWidth = 1;
+    this.ctx.arc(Math.floor(this.internalWidth / 2), Math.floor(150), 30, 0, Math.PI * 2);
     this.ctx.stroke();
-    
+
+    this.ctx.beginPath();
+    const angle = (this.headingDeg - 90) * Math.PI / 180; // Adjust for canvas 0deg being right
+    const arrowLength = 25;
+    const centerX = Math.floor(this.internalWidth / 2);
+    const centerY = Math.floor(150);
+    this.ctx.moveTo(centerX, centerY);
+    this.ctx.lineTo(centerX + arrowLength * Math.cos(angle), centerY + arrowLength * Math.sin(angle));
+    this.ctx.stroke();
+
     this.ctx.restore();
-    
-    // Render content based on type
-    switch (type) {
-      case 'speed':
-        this._renderSpeedContent(layout);
-        break;
-      case 'time':
-        this._renderTimeContent(layout);
-        break;
-      case 'distance':
-        this._renderDistanceContent(layout);
-        break;
-      case 'heading':
-        this._renderHeadingContent(layout);
-        break;
-    }
-  }
-  
-  /**
-   * Render speed content with proper text fitting
-   * @private
-   */
-  _renderSpeedContent(layout) {
-    const speed = round1(this.data.speedKph);
-    const speedText = speed < 100 ? `${speed.toFixed(0)}` : '99+';
-    
-    // Label at top
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    this.ctx.font = this.fonts.label;
-    this.ctx.textAlign = 'left';
-    this.ctx.fillText('SPEED', layout.x + 8, layout.y + 8);
-    
-    // Main speed value - centered in card
-    this.ctx.fillStyle = this.theme.accent;
-    this.ctx.font = this.fonts.valueXLarge;
-    this.ctx.textAlign = 'center';
-    const centerX = layout.x + layout.containerWidth / 2;
-    this.ctx.fillText(speedText, centerX, layout.y + 28);
-    
-    // Unit below speed value
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    this.ctx.font = this.fonts.labelSmall;
-    this.ctx.textAlign = 'center';
-    this.ctx.fillText('km/h', centerX, layout.y + 55);
-  }
-  
-  /**
-   * Render time content with proper alignment
-   * @private
-   */
-  _renderTimeContent(layout) {
-    const timeText = formatTime(this.data.elapsedMs);
-    
-    // Label at top
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    this.ctx.font = this.fonts.label;
-    this.ctx.textAlign = 'left';
-    this.ctx.fillText('TIME', layout.x + 8, layout.y + 8);
-    
-    // Time value - centered in card
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.font = this.fonts.valueMedium;
-    this.ctx.textAlign = 'center';
-    const centerX = layout.x + layout.containerWidth / 2;
-    this.ctx.fillText(timeText, centerX, layout.y + 35);
-  }
-  
-  /**
-   * Render distance content with smart units
-   * @private
-   */
-  _renderDistanceContent(layout) {
-    const distanceKm = this.data.distanceM / 1000;
-    const distanceText = distanceKm < 1 ? 
-      `${Math.round(this.data.distanceM)}m` : 
-      `${distanceKm.toFixed(1)}km`;
-    
-    // Label at top
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    this.ctx.font = this.fonts.label;
-    this.ctx.textAlign = 'left';
-    this.ctx.fillText('DISTANCE', layout.x + 8, layout.y + 8);
-    
-    // Distance value - centered in card
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.font = this.fonts.valueLarge;
-    this.ctx.textAlign = 'center';
-    const centerX = layout.x + layout.containerWidth / 2;
-    this.ctx.fillText(distanceText, centerX, layout.y + 35);
-  }
-  
-  /**
-   * Render heading content with proper alignment
-   * @private
-   */
-  _renderHeadingContent(layout) {
-    const compass = compassFromDegrees(this.data.headingDeg);
-    const degrees = Math.round(this.data.headingDeg);
-    const headingText = `${compass} ${degrees}°`;
-    
-    // Label at top
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    this.ctx.font = this.fonts.label;
-    this.ctx.textAlign = 'left';
-    this.ctx.fillText('HEADING', layout.x + 8, layout.y + 8);
-    
-    // Heading value - centered in card
-    this.ctx.fillStyle = this.theme.accent;
-    this.ctx.font = this.fonts.valueMedium;
-    this.ctx.textAlign = 'center';
-    const centerX = layout.x + layout.containerWidth / 2;
-    this.ctx.fillText(headingText, centerX, layout.y + 35);
-  }
-  
-  /**
-   * Render audio VU meter
-   * @private
-   */
-  _renderVUMeter() {
-    const vu = this.layout.vu;
-    const level = this.smoothVU;
-    
-    // VU meter background
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-    this.ctx.fillRect(vu.x, vu.y, vu.width, vu.height);
-    
-    // VU meter level with gradient
-    if (level > 0) {
-      const levelWidth = vu.width * level;
-      const gradient = this.ctx.createLinearGradient(vu.x, 0, vu.x + vu.width, 0);
-      gradient.addColorStop(0, this.theme.accent);
-      gradient.addColorStop(0.7, this.theme.warning);
-      gradient.addColorStop(1, this.theme.danger);
-      
-      this.ctx.fillStyle = gradient;
-      this.ctx.fillRect(vu.x, vu.y, levelWidth, vu.height);
-    }
-    
-    // VU meter border
-    this.ctx.strokeStyle = this.theme.fg;
-    this.ctx.lineWidth = 1;
-    this.ctx.strokeRect(vu.x, vu.y, vu.width, vu.height);
-    
-    // VU label
-    this.ctx.fillStyle = this.theme.fg;
-    this.ctx.font = this.fonts.label;
-    this.ctx.fillText('AUDIO', vu.x, vu.y - 20);
-  }
-  
-  /**
-   * Get current performance statistics
-   * @returns {Object} Performance stats
-   */
-  getPerformanceStats() {
-    return {
-      isRunning: this.isRunning,
-      frameCount: this.frameCount,
-      dpr: this.dpr,
-      canvasSize: this.canvas ? `${this.canvas.width}x${this.canvas.height}` : 'unattached',
-      displaySize: `${this.width}x${this.height}`,
-      hasBackground: !!this.backgroundSrc
-    };
+
+    this.animationFrameId = requestAnimationFrame(this._draw.bind(this));
   }
 }
 
 export default LiveHUD;
-
-/*
-Example usage for MediaRecorder integration:
-
-import LiveHUD from './LiveHUD.js';
-
-const hud = new LiveHUD({ 
-  showHeading: true, 
-  showVU: true 
-});
-const canvas = document.querySelector('#hudCanvas');
-hud.attach(canvas);
-hud.start();
-
-// For recording with MediaRecorder:
-const stream = canvas.captureStream(30);
-const recorder = new MediaRecorder(stream, {
-  mimeType: 'video/webm;codecs=vp9'
-});
-
-// Update with real GPS/sensor data:
-hud.update({
-  speedKph: gpsSpeed,
-  elapsedMs: Date.now() - startTime,
-  distanceM: totalDistance,
-  headingDeg: gpsHeading,
-  vuLevel: audioAnalyser.getByteFrequencyData()[0] / 255
-});
-
-// For camera compositing:
-const video = document.querySelector('#cameraFeed');
-function render() {
-  hud.drawBackgroundFrame(video);
-  requestAnimationFrame(render);
-}
-render();
-*/
