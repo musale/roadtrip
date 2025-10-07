@@ -49,6 +49,17 @@ export async function addTrip(trip) {
   });
 }
 
+export async function updateTrip(trip) {
+  const database = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction([TRIP_STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(TRIP_STORE_NAME);
+    const request = store.put(trip);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function getTrips() {
   const database = await openDB();
   return new Promise((resolve, reject) => {
@@ -87,6 +98,28 @@ export async function clearVideoChunks() {
   return new Promise((resolve, reject) => {
     const transaction = database.transaction([VIDEO_CHUNK_STORE_NAME], 'readwrite');
     const store = transaction.objectStore(VIDEO_CHUNK_STORE_NAME);
+    const request = store.clear();
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function deleteTrip(id) {
+  const database = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction([TRIP_STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(TRIP_STORE_NAME);
+    const request = store.delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function clearTrips() {
+  const database = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction([TRIP_STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(TRIP_STORE_NAME);
     const request = store.clear();
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);

@@ -31,6 +31,7 @@ class TripRecorder {
       startedAt: Date.now(),
       endedAt: null,
       points: [],
+      videoFilename: null,
       stats: {
         distanceM: 0,
         durationMs: 0,
@@ -64,7 +65,7 @@ class TripRecorder {
     console.log("Trip started.");
   }
 
-  async stopTrip() {
+  async stopTrip({ videoFilename = null } = {}) {
     if (!this.watchId) {
       console.warn("No trip in progress.");
       return;
@@ -79,6 +80,7 @@ class TripRecorder {
     this.currentTrip.stats.maxKph = this.maxSpeedKph;
     this.currentTrip.stats.movingTime = this.movingTime;
     this.currentTrip.stats.avgKph = this.distanceM > 0 ? (this.distanceM / 1000) / (this.movingTime / (1000 * 60 * 60)) : 0;
+    this.currentTrip.videoFilename = videoFilename;
 
     await addTrip(this.currentTrip);
     console.log("Trip stopped and saved:", this.currentTrip);
