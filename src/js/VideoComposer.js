@@ -8,10 +8,8 @@ const FRAME_RATE = 30;
 const CHUNK_DURATION_MS = 1000; // 1 second chunks
 
 class VideoComposer {
-  constructor(hudCanvas) {
-    this.hudCanvas = hudCanvas;
-    this.hudCtx = hudCanvas.getContext('2d');
-    this.cameraFeed = document.getElementById('cameraFeed');
+  constructor() {
+    this.cameraFeed = document.getElementById('videoFeed');
     this.mediaRecorder = null;
     this.recordedBlobs = [];
     this.stream = null;
@@ -21,27 +19,11 @@ class VideoComposer {
     this.isDualCamera = false;
     this.facingMode = 'environment';
 
-    this.offscreenCanvas = new OffscreenCanvas(VIDEO_WIDTH, VIDEO_HEIGHT);
-    this.offscreenCtx = this.offscreenCanvas.getContext('2d');
-
     // Low power mode detection
     this.lowPowerMode = false;
     this.lastFrameTime = 0;
     this.frameCount = 0;
     this.fpsCheckInterval = null;
-  }
-
-  _setupOffscreenCanvas() {
-    if (this.cameraFeed.videoWidth && this.cameraFeed.videoHeight) {
-      this.offscreenCanvas.width = this.cameraFeed.videoWidth;
-      this.offscreenCanvas.height = this.cameraFeed.videoHeight;
-    } else {
-      // Fallback if videoWidth/Height not immediately available
-      // This might need a slight delay or event listener for 'loadedmetadata'
-      this.offscreenCanvas.width = VIDEO_WIDTH; // Default to common resolution
-      this.offscreenCanvas.height = VIDEO_HEIGHT;
-    }
-    this.offscreenCtx = this.offscreenCanvas.getContext('2d');
   }
 
   async listCameras() {
@@ -70,7 +52,6 @@ class VideoComposer {
       this.videoTracks = this.stream.getVideoTracks();
       this.audioTrack = this.stream.getAudioTracks()[0];
       this.isDualCamera = false;
-      this._setupOffscreenCanvas();
       this._startFpsCheck();
       return true;
     } catch (error) {
@@ -107,7 +88,6 @@ class VideoComposer {
         this.cameraFeed.srcObject = this.stream;
         this.videoTracks = this.stream.getVideoTracks();
         this.isDualCamera = true;
-        this._setupOffscreenCanvas();
         this._startFpsCheck();
         return true;
       }
@@ -194,11 +174,8 @@ class VideoComposer {
     const mimeType = this._getMimeType();
     if (!mimeType) return false;
 
-    // Create a new stream from the canvas and the audio track
-    const canvasStream = this.hudCanvas.captureStream(FRAME_RATE);
     const finalStream = new MediaStream();
-
-    canvasStream.getVideoTracks().forEach(track => finalStream.addTrack(track));
+    this.stream.getVideoTracks().forEach(track => finalStream.addTrack(track));
     if (this.audioTrack) {
       finalStream.addTrack(this.audioTrack);
     }
@@ -248,71 +225,6 @@ class VideoComposer {
     }
     console.warn("MediaRecorder not active or not initialized.");
     return null;
-  }
-
-  // This method will draw the camera feed(s) onto the HUD canvas
-  // It needs to be called continuously, e.g., from LiveHUD's animation loop
-  drawCameraFeedToCanvas() {
-    if (!this.hudCtx || !this.cameraFeed || !this.cameraFeed.srcObject) return;
-
-    // Ensure offscreen canvas is correctly sized
-    this._setupOffscreenCanvas();
-
-    // Clear the canvas before drawing the video frame
-    this.hudCtx.clearRect(0, 0, this.hudCanvas.width, this.hudCanvas.height);
-
-    // Draw video frame to offscreen canvas, mirrored
-    this.offscreenCtx.save();
-    this.offscreenCtx.scale(-1, 1); // Mirror horizontally
-    this.offscreenCtx.drawImage(this.cameraFeed, -this.offscreenCanvas.width, 0, this.offscreenCanvas.width, this.offscreenCanvas.height);
-    this.offscreenCtx.restore();
-
-    // Calculate dimensions to draw offscreen canvas to visible HUD canvas, maintaining aspect ratio (object-fit: contain)
-    const hRatio = this.hudCanvas.width / this.offscreenCanvas.width;
-    const vRatio = this.hudCanvas.height / this.offscreenCanvas.height;
-    const ratio = Math.min(hRatio, vRatio);
-
-    const newWidth = this.offscreenCanvas.width * ratio;
-    const newHeight = this.offscreenCanvas.height * ratio;
-    const x = (this.hudCanvas.width - newWidth) / 2;
-    const y = (this.hudCanvas.height - newHeight) / 2;
-
-    this.hudCtx.drawImage(this.offscreenCanvas, x, y, newWidth, newHeight);
-
-    // If dual camera, draw PiP
-    if (this.isDualCamera && this.videoTracks.length > 1) {
-      const pipWidth = this.hudCanvas.width * (this.lowPowerMode ? 0.2 : 0.3);
-      const pipHeight = this.hudCanvas.height * (this.lowPowerMode ? 0.2 : 0.3);
-      const padding = 20;
-
-      // Assuming the second video track is the front camera for PiP
-      // This requires a separate <video> element for the PiP stream or more complex canvas drawing
-      // For simplicity, let's assume cameraFeed shows the main stream, and we'd need another element for PiP
-      // Or, more ideally, draw directly from the MediaStreamTrack if possible, which is not straightforward.
-      // A simpler approach for dual camera on canvas is to draw two separate video elements.
-      // For now, this will just draw the main feed.
-
-      // To properly implement PiP with two distinct video streams on a single canvas for recording,
-      // you would typically have two <video> elements, each playing one stream, and then draw both
-      // onto the canvas. Since we only have one `cameraFeed` element, this part is simplified.
-      // A more robust solution would involve creating an OffscreenCanvas for each video track
-      // or managing multiple video elements and drawing them.
-
-      // For now, let's just draw a placeholder for PiP if dual camera is active
-      this.hudCtx.save();
-      this.hudCtx.strokeStyle = 'var(--color-brand)';
-      this.hudCtx.lineWidth = 5;
-      const pipX = this.hudCanvas.width - pipWidth - padding;
-      const pipY = this.hudCanvas.height - pipHeight - padding;
-      this.hudCtx.strokeRect(pipX, pipY, pipWidth, pipHeight);
-      this.hudCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      this.hudCtx.fillRect(pipX, pipY, pipWidth, pipHeight);
-      this.hudCtx.fillStyle = 'white';
-      this.hudCtx.font = '20px Arial';
-      this.hudCtx.textAlign = 'center';
-      this.hudCtx.fillText('PiP', pipX + pipWidth / 2, pipY + pipHeight / 2);
-      this.hudCtx.restore();
-    }
   }
 }
 

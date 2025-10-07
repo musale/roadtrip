@@ -1,9 +1,11 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;700&family=Orbitron:wght@400;700&display=swap');
+
 :root {
   --color-bg: #0D0D0D;
   --color-surface: #1A1A1A;
   --color-text-primary: #E0E0E0;
-  --color-brand: #00F5D4;
-  --color-accent: #FF1B9B;
+  --color-brand: #00F5D4; /* Neon Cyan */
+  --color-accent: #00F5D4; /* Neon Cyan */
 
   --shadow-neon: 0 0 5px var(--color-brand), 0 0 10px var(--color-brand), 0 0 20px var(--color-brand), 0 0 40px var(--color-brand);
 
@@ -11,6 +13,9 @@
 
   --timing-glowPulse: 2s;
   --timing-glitchIn: 0.5s;
+
+  --font-heading: 'Orbitron', sans-serif;
+  --font-body: 'IBM Plex Sans', sans-serif;
 }
 
 @tailwind base;
@@ -21,9 +26,14 @@
 body {
   background-color: var(--color-bg);
   color: var(--color-text-primary);
+  font-family: var(--font-body);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
 }
 
 *:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
