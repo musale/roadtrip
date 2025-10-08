@@ -12,7 +12,7 @@ class VideoComposer {
     dualFrontVideo,
     dualBackVideo,
   } = {}) {
-    this.singleVideoEl = singleVideoEl ?? document.getElementById('singleVideoFeed');
+    this.singleVideoEl = singleVideoEl ?? document.getElementById('cameraFeed');
     this.dualContainer = dualContainer ?? document.getElementById('dualVideoContainer');
     this.dualFrontVideo = dualFrontVideo ?? document.getElementById('dualFrontVideo');
     this.dualBackVideo = dualBackVideo ?? document.getElementById('dualBackVideo');
@@ -31,14 +31,22 @@ class VideoComposer {
     this.dualCanvas = null;
     this.dualCtx = null;
     this.dualAnimationFrame = null;
-  this.compositeStream = null;
+    this.compositeStream = null;
 
     // Low power mode detection
     this.lowPowerMode = false;
     this.lastFrameTime = 0;
     this.frameCount = 0;
     this.fpsCheckInterval = null;
-  this.frameCounterId = null;
+    this.frameCounterId = null;
+  }
+
+  async hasOPFS() {
+    try {
+      return !!(navigator.storage && navigator.storage.getDirectory);
+    } catch {
+      return false;
+    }
   }
 
   async listCameras() {
@@ -65,7 +73,11 @@ class VideoComposer {
     this.isUserFacing = facing === 'user';
 
     let stream = null;
-    let videoConstraints = { facingMode: { ideal: facing }, width: VIDEO_WIDTH, height: VIDEO_HEIGHT };
+    const videoConstraints = {
+      facingMode: { ideal: facing },
+      width: { ideal: VIDEO_WIDTH },
+      height: { ideal: VIDEO_HEIGHT }
+    };
 
     stream = await this._getMediaStream(videoConstraints);
 
@@ -78,19 +90,19 @@ class VideoComposer {
           : label.includes('back') || label.includes('rear') || label.includes('environment');
       });
       if (desiredCamera) {
-        videoConstraints = { deviceId: { exact: desiredCamera.deviceId }, width: VIDEO_WIDTH, height: VIDEO_HEIGHT };
-        stream = await this._getMediaStream(videoConstraints);
+        const specificConstraints = { deviceId: { exact: desiredCamera.deviceId }, width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } };
+        stream = await this._getMediaStream(specificConstraints);
       }
     }
 
     if (!stream) {
-      videoConstraints = { facingMode: facing, width: VIDEO_WIDTH, height: VIDEO_HEIGHT };
-      stream = await this._getMediaStream(videoConstraints);
+      const generalFacingConstraints = { facingMode: facing, width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } };
+      stream = await this._getMediaStream(generalFacingConstraints);
     }
 
     if (!stream) {
-      videoConstraints = { width: VIDEO_WIDTH, height: VIDEO_HEIGHT };
-      stream = await this._getMediaStream(videoConstraints);
+      const anyCameraConstraints = { width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } };
+      stream = await this._getMediaStream(anyCameraConstraints);
       if (stream) {
         this.isUserFacing = false;
       }
@@ -128,7 +140,6 @@ class VideoComposer {
     this.frontStream = frontStream ?? backStream;
 
     if (!this.backStream || !this.frontStream) {
-      // If only one stream, clone track so we can present two views
       const originalStream = this.backStream ?? this.frontStream;
       const clonedTrack = originalStream?.getVideoTracks()[0]?.clone();
       const duplicateStream = clonedTrack ? new MediaStream([clonedTrack]) : null;
@@ -203,11 +214,11 @@ class VideoComposer {
 
   _setDisplayMode(mode) {
     if (mode === 'dual') {
-      this.dualContainer.classList.remove('hidden');
-      this.singleVideoEl.classList.add('hidden');
+      this.dualContainer.classList.remove('invisible');
+      this.singleVideoEl.style.visibility = 'hidden';
     } else {
-      this.singleVideoEl.classList.remove('hidden');
-      this.dualContainer.classList.add('hidden');
+      this.singleVideoEl.style.visibility = 'visible';
+      this.dualContainer.classList.add('invisible');
     }
   }
 
@@ -228,18 +239,24 @@ class VideoComposer {
     let backStream = null;
     let frontStream = null;
 
+    const videoConstraints = (deviceId) => ({
+        deviceId: deviceId ? { exact: deviceId } : undefined,
+        width: { ideal: VIDEO_WIDTH },
+        height: { ideal: VIDEO_HEIGHT },
+    });
+
     if (backCandidates[0]) {
-      backStream = await this._getMediaStream({ deviceId: { exact: backCandidates[0].deviceId }, width: VIDEO_WIDTH, height: VIDEO_HEIGHT });
+      backStream = await this._getMediaStream(videoConstraints(backCandidates[0].deviceId));
     }
     if (!backStream) {
-      backStream = await this._getMediaStream({ facingMode: { ideal: 'environment' }, width: VIDEO_WIDTH, height: VIDEO_HEIGHT });
+      backStream = await this._getMediaStream({ facingMode: { ideal: 'environment' }, width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } });
     }
 
     if (frontCandidates[0]) {
-      frontStream = await this._getMediaStream({ deviceId: { exact: frontCandidates[0].deviceId }, width: VIDEO_WIDTH, height: VIDEO_HEIGHT }, false);
+      frontStream = await this._getMediaStream(videoConstraints(frontCandidates[0].deviceId), false);
     }
     if (!frontStream) {
-      frontStream = await this._getMediaStream({ facingMode: { ideal: 'user' }, width: VIDEO_WIDTH, height: VIDEO_HEIGHT }, false);
+      frontStream = await this._getMediaStream({ facingMode: { ideal: 'user' }, width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } }, false);
     }
 
     return { backStream, frontStream };
@@ -309,12 +326,13 @@ class VideoComposer {
   }
 
   async _playVideo(videoEl) {
-    try {
-      await videoEl.play();
-    } catch (error) {
-      // Some browsers require user gesture; ignore silently
-      console.warn('Unable to autoplay video element:', error);
+    videoEl.muted = true;
+    videoEl.playsInline = true;
+    videoEl.setAttribute('playsinline', 'true');
+    if (videoEl.readyState < 1) {
+      await new Promise(res => videoEl.addEventListener('loadedmetadata', res, { once: true }));
     }
+    await videoEl.play();
   }
 
   _startFpsCheck() {
@@ -370,11 +388,10 @@ class VideoComposer {
   }
 
   _getMimeType() {
-    const mimeTypes = [
-      'video/webm; codecs="vp9"',
-      'video/mp4; codecs="avc1.42001E"',
-      'video/webm; codecs="vp8"',
-    ];
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const mimeTypes = isSafari
+      ? ['video/mp4; codecs="avc1.42E01E"', 'video/mp4']
+      : ['video/webm; codecs="vp9"', 'video/webm; codecs="vp8"', 'video/mp4; codecs="avc1.42E01E"'];
 
     for (const mime of mimeTypes) {
       if (MediaRecorder.isTypeSupported(mime)) {
@@ -385,7 +402,7 @@ class VideoComposer {
     return null;
   }
 
-  startRecording(onChunkAvailable) {
+  startRecording(onChunkAvailable, enableButtons) {
     if (!this.stream) {
       console.error('No stream available for recording.');
       return false;
@@ -413,13 +430,26 @@ class VideoComposer {
 
     this.mediaRecorder.onstop = () => {
       console.log('MediaRecorder stopped. Final recorded blobs count:', this.recordedBlobs.length);
+      const mime = this.mediaRecorder.mimeType;
+      const blob = new Blob(this.recordedBlobs, { type: mime });
+      if (blob.size > 0) {
+        enableButtons(blob);
+      } else {
+        alert('Recording failed or unsupported codec.');
+      }
     };
 
     this.mediaRecorder.onerror = (event) => {
       console.error('MediaRecorder error:', event.error);
     };
 
-    this.mediaRecorder.start(CHUNK_DURATION_MS);
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    if (isSafari) {
+      this.mediaRecorder.start();
+    } else {
+      this.mediaRecorder.start(CHUNK_DURATION_MS);
+    }
+
     console.log('MediaRecorder started with MIME type:', mimeType, 'State:', this.mediaRecorder.state);
     return true;
   }
@@ -427,16 +457,20 @@ class VideoComposer {
   async stopRecording() {
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
       console.log('Stopping MediaRecorder. Current state:', this.mediaRecorder.state);
-      this.mediaRecorder.stop();
-      await new Promise(resolve => this.mediaRecorder.addEventListener('stop', resolve, { once: true }));
-      console.log('Recording stopped. Total chunks collected:', this.recordedBlobs.length);
-      if (this.recordedBlobs.length > 0) {
-        const superBuffer = new Blob(this.recordedBlobs, { type: this.recordedBlobs[0].type });
-        this.recordedBlobs = [];
-        return superBuffer;
-      }
-      console.warn('No video blobs were recorded.');
-      return null;
+      return new Promise(resolve => {
+        this.mediaRecorder.addEventListener('stop', () => {
+          const mime = this.mediaRecorder.mimeType;
+          const blob = new Blob(this.recordedBlobs, { type: mime });
+          this.recordedBlobs = [];
+          if (blob.size > 0) {
+            resolve(blob);
+          } else {
+            console.warn('No video blobs were recorded.');
+            resolve(null);
+          }
+        }, { once: true });
+        this.mediaRecorder.stop();
+      });
     }
     console.warn('MediaRecorder not active or not initialized.');
     return null;
