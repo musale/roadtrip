@@ -6,16 +6,16 @@
   <link rel="icon" type="image/svg+xml" href="/vite.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RoadTrip</title>
-  <link rel="stylesheet" href="/src/css/styles.css">
+
 </head>
 
 <body class="bg-black text-white font-body overflow-hidden h-screen w-screen flex items-center justify-center">
   <div id="app" class="relative h-full w-full">
     <!-- Video Feed -->
     <div id="videoContainer" class="absolute inset-0 w-full h-full">
-      <video id="singleVideoFeed" class="absolute inset-0 w-full h-full object-cover bg-black" autoplay playsinline
+      <video id="cameraFeed" class="absolute inset-0 w-full h-full object-cover bg-black" autoplay playsinline
         muted></video>
-      <div id="dualVideoContainer" class="hidden absolute inset-0 flex flex-col gap-3 p-3 bg-black/30">
+      <div id="dualVideoContainer" class="invisible absolute inset-0 flex flex-col gap-3 p-3 bg-black/30">
         <div class="relative flex-1 rounded-xl overflow-hidden border border-white/20 bg-black/60 backdrop-blur-sm">
           <video id="dualBackVideo" class="w-full h-full object-cover" autoplay playsinline muted></video>
           <span
