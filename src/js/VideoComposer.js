@@ -17,25 +17,23 @@ class VideoComposer {
 
     this.mediaRecorder = null;
     this.recordedBlobs = [];
-    this.stream = null; // Stream used for recording (single or composite)
-    this.audioTrack = null;
-    this.videoTracks = [];
-    this.isDualCamera = false;
-    this.facingMode = 'user';
-    this.isUserFacing = false;
-
-    this.frontStream = null;
-    this.backStream = null;
-    this.dualCanvas = null;
-    this.dualCtx = null;
-    this.dualAnimationFrame = null;
     this.compositeStream = null;
+    this.audioTrack = null; // To hold the audio track from the primary stream
 
     // Compositor canvas for recording
     this.compositorCanvas = document.createElement('canvas');
     this.compositorCanvas.width = VIDEO_WIDTH;
     this.compositorCanvas.height = VIDEO_HEIGHT;
     this.compositorCtx = this.compositorCanvas.getContext('2d');
+
+    // Internal state
+    this.state = {
+      captureMode: 'single',      // 'single' | 'dual'
+      facing: 'environment',      // 'user' | 'environment' (single only)
+      backStream: null,
+      frontStream: null,
+      isRecording: false
+    };
 
     // Low power mode detection
     this.lowPowerMode = false;
@@ -45,8 +43,8 @@ class VideoComposer {
     this.frameCounterId = null;
 
     this.hud = {
-      speed: '0.0 MPH',
-      distance: '0.0 MI',
+      speed: '0.0 KPH',
+      distance: '0.0 KM',
       time: '00:00:00',
     };
   }
@@ -69,7 +67,7 @@ class VideoComposer {
     }
   }
 
-  async _getMediaStream(videoConstraints, audioConstraints = { echoCancellation: true, noiseSuppression: true }) {
+  async _getMediaStream(videoConstraints, audioConstraints = false) { // audio is optional
     try {
       return await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: audioConstraints });
     } catch (error) {
@@ -78,84 +76,102 @@ class VideoComposer {
     }
   }
 
-  async startSingle({ facing = 'user' } = {}) {
-    this.facingMode = facing;
-    this.isUserFacing = facing === 'user';
+  async setCaptureMode(mode) {
+    if (this.state.captureMode === mode) return;
+    this.state.captureMode = mode;
+    await this.stopStreams();
+    if (mode === 'single') {
+      await this.startSingle();
+    } else {
+      await this.startDual();
+    }
+  }
 
-    const constraintsToTry = [
-      { video: { width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT }, facingMode: { ideal: facing } }, audio: true },
-      { video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: { ideal: facing } }, audio: true },
-      { video: { width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } }, audio: true },
-      { video: { width: { ideal: 640 }, height: { ideal: 480 } }, audio: true },
-      { video: true, audio: true }
-    ];
+  async setFacing(facing) {
+    if (this.state.facing === facing) return;
+    this.state.facing = facing;
+    if (this.state.captureMode === 'single') {
+      await this.stopStreams();
+      await this.startSingle();
+    }
+  }
+
+  async startSingle() {
+    const baseConstraints = { width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } };
+    const videoConstraints = { facingMode: { ideal: this.state.facing }, ...baseConstraints };
 
     let stream = null;
-    for (const constraints of constraintsToTry) {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-        if (stream) {
-          console.log('Successfully acquired media stream with constraints:', constraints);
-          break;
-        }
-      } catch (error) {
-        console.warn(`Failed to get media stream with constraints:`, constraints, error);
-      }
-    }
-
-    if (!stream) {
-      console.error('Failed to acquire camera stream for single mode after trying all constraints.');
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: true });
+    } catch (error) {
+      console.error('Failed to get single camera stream:', error);
       return false;
     }
 
-    this._setDisplayMode('single');
-    this.stream = stream;
-    this.videoTracks = stream.getVideoTracks();
-    this.audioTrack = stream.getAudioTracks()[0] ?? null;
-    this.isDualCamera = false;
+    if (!stream) {
+      console.error('No stream acquired for single mode.');
+      return false;
+    }
 
+    this.state.backStream = stream; // Use backStream for single camera
+    this.state.frontStream = null;
+    this.audioTrack = stream.getAudioTracks()[0] ?? null;
+
+    this._setDisplayMode('single');
     this.singleVideoEl.srcObject = stream;
     await this._playVideo(this.singleVideoEl);
-    this._applyMirror(this.singleVideoEl, this.isUserFacing);
+    this._applyMirror(this.singleVideoEl, this.state.facing === 'user');
 
+    this._startCompositeDrawing();
     this._startFpsCheck();
     this._startFrameCounter();
     return true;
   }
 
   async startDual() {
-    const { backStream, frontStream } = await this._getDualStreams();
+    const baseConstraints = { width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } };
+    const backVideoConstraints = { facingMode: { ideal: 'environment' }, ...baseConstraints };
+    const frontVideoConstraints = { facingMode: { ideal: 'user' }, ...baseConstraints };
 
+    let backStream = await this._getMediaStream(backVideoConstraints, { echoCancellation: true, noiseSuppression: true });
+    let frontStream = await this._getMediaStream(frontVideoConstraints, false); // No audio for front
+
+    // Fallback logic: if both fail, or one fails and cannot be cloned, revert to single
     if (!backStream && !frontStream) {
       console.warn('Dual camera unavailable. Falling back to single camera.');
-      return this.startSingle({ facing: this.facingMode });
+      this.state.captureMode = 'single'; // Update state for fallback
+      return this.startSingle();
     }
 
-    this.backStream = backStream ?? frontStream;
-    this.frontStream = frontStream ?? backStream;
-
-    if (!this.backStream || !this.frontStream) {
-      const originalStream = this.backStream ?? this.frontStream;
-      const clonedTrack = originalStream?.getVideoTracks()[0]?.clone();
-      const duplicateStream = clonedTrack ? new MediaStream([clonedTrack]) : null;
-
-      if (!duplicateStream) {
-        console.warn('Unable to clone track for dual fallback. Reverting to single camera.');
-        this._stopSupplementaryStreams();
-        return this.startSingle({ facing: this.facingMode });
+    // Attempt to clone if one stream fails
+    if (!backStream && frontStream) {
+      console.warn('Back camera stream failed, attempting to clone front stream.');
+      const clonedTrack = frontStream.getVideoTracks()[0]?.clone();
+      if (clonedTrack) {
+        backStream = new MediaStream([clonedTrack]);
+        // If frontStream has audio, use it for backStream's audio
+        const frontAudioTrack = frontStream.getAudioTracks()[0];
+        if (frontAudioTrack) backStream.addTrack(frontAudioTrack.clone());
       }
-
-      if (!this.backStream) {
-        this.backStream = duplicateStream;
-      }
-      if (!this.frontStream) {
-        this.frontStream = duplicateStream;
-      }
+    } else if (!frontStream && backStream) {
+      console.warn('Front camera stream failed, attempting to clone back stream.');
+      const clonedTrack = backStream.getVideoTracks()[0]?.clone();
+      if (clonedTrack) frontStream = new MediaStream([clonedTrack]);
     }
+
+    if (!backStream || !frontStream) {
+      console.error('Could not establish dual streams, even with cloning. Falling back to single.');
+      this.state.captureMode = 'single'; // Update state for fallback
+      return this.startSingle();
+    }
+
+    this.state.backStream = backStream;
+    this.state.frontStream = frontStream;
+    this.audioTrack = backStream.getAudioTracks()[0] ?? null; // Prefer audio from back camera
 
     this._setDisplayMode('dual');
-    this.dualBackVideo.srcObject = this.backStream;
-    this.dualFrontVideo.srcObject = this.frontStream;
+    this.dualBackVideo.srcObject = backStream;
+    this.dualFrontVideo.srcObject = frontStream;
 
     await Promise.all([
       this._playVideo(this.dualBackVideo),
@@ -165,54 +181,41 @@ class VideoComposer {
     this._applyMirror(this.dualFrontVideo, true);
     this._applyMirror(this.dualBackVideo, false);
 
-    this.audioTrack = this.backStream.getAudioTracks()[0] ?? this.frontStream.getAudioTracks()[0] ?? null;
-    this.stream = this._createCompositeStream();
-    this.videoTracks = this.stream.getVideoTracks();
-    this.isDualCamera = true;
-    this.isUserFacing = false;
-
+    this._startCompositeDrawing();
     this._startFpsCheck();
     this._startFrameCounter();
     return true;
   }
 
-  stopCamera() {
+  async stopStreams() {
     this._stopFpsCheck();
     this._stopFrameCounter();
-    this._stopComposite();
+    this._stopCompositeDrawing();
 
-    if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
-      this.stream = null;
+    if (this.state.backStream) {
+      this.state.backStream.getTracks().forEach(track => track.stop());
+      this.state.backStream = null;
     }
-
-    if (this.frontStream) {
-      this.frontStream.getTracks().forEach(track => track.stop());
-      this.frontStream = null;
-    }
-
-    if (this.backStream) {
-      this.backStream.getTracks().forEach(track => track.stop());
-      this.backStream = null;
+    if (this.state.frontStream) {
+      this.state.frontStream.getTracks().forEach(track => track.stop());
+      this.state.frontStream = null;
     }
 
     this.audioTrack = null;
-    this.videoTracks = [];
-    this.isDualCamera = false;
-    this.isUserFacing = false;
+    if (this.singleVideoEl) this.singleVideoEl.srcObject = null;
+    if (this.dualBackVideo) this.dualBackVideo.srcObject = null;
+    if (this.dualFrontVideo) this.dualFrontVideo.srcObject = null;
 
-    this._setDisplayMode('single');
-    this.singleVideoEl.srcObject = null;
-    this.dualBackVideo.srcObject = null;
-    this.dualFrontVideo.srcObject = null;
+    // Clear compositor canvas
+    this.compositorCtx.clearRect(0, 0, VIDEO_WIDTH, VIDEO_HEIGHT);
   }
 
   _setDisplayMode(mode) {
     if (mode === 'dual') {
       this.dualContainer.classList.remove('invisible');
-      this.singleVideoEl.style.visibility = 'hidden';
+      this.singleVideoEl.classList.add('hidden'); // Use hidden class for single video
     } else {
-      this.singleVideoEl.style.visibility = 'visible';
+      this.singleVideoEl.classList.remove('hidden'); // Use hidden class for single video
       this.dualContainer.classList.add('invisible');
     }
   }
@@ -226,38 +229,7 @@ class VideoComposer {
     }
   }
 
-  async _getDualStreams() {
-    const cameras = await this.listCameras();
-    const backCandidates = cameras.filter(device => /back|rear|environment/i.test(device.label));
-    const frontCandidates = cameras.filter(device => /front|user|face/i.test(device.label));
-
-    let backStream = null;
-    let frontStream = null;
-
-    const videoConstraints = (deviceId) => ({
-        deviceId: deviceId ? { exact: deviceId } : undefined,
-        width: { ideal: VIDEO_WIDTH },
-        height: { ideal: VIDEO_HEIGHT },
-    });
-
-    if (backCandidates[0]) {
-      backStream = await this._getMediaStream(videoConstraints(backCandidates[0].deviceId));
-    }
-    if (!backStream) {
-      backStream = await this._getMediaStream({ facingMode: { ideal: 'environment' }, width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } });
-    }
-
-    if (frontCandidates[0]) {
-      frontStream = await this._getMediaStream(videoConstraints(frontCandidates[0].deviceId), false);
-    }
-    if (!frontStream) {
-      frontStream = await this._getMediaStream({ facingMode: { ideal: 'user' }, width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } }, false);
-    }
-
-    return { backStream, frontStream };
-  }
-
-  _createCompositeStream() {
+  _startCompositeDrawing() {
     const draw = () => {
       const ctx = this.compositorCtx;
       const width = this.compositorCanvas.width;
@@ -265,16 +237,21 @@ class VideoComposer {
 
       ctx.clearRect(0, 0, width, height);
 
-      if (this.isDualCamera) {
-        const halfHeight = height / 2;
-        if (this.dualBackVideo?.readyState >= 2) {
-          ctx.drawImage(this.dualBackVideo, 0, 0, width, halfHeight - 4);
+      if (this.state.captureMode === 'dual') {
+        // Draw dual cameras split-screen
+        const halfWidth = width / 2;
+        // Ensure videos are ready before drawing
+        if (this.dualBackVideo && this.dualBackVideo.readyState >= 2) {
+          ctx.drawImage(this.dualBackVideo, 0, 0, halfWidth, height);
         }
-        if (this.dualFrontVideo?.readyState >= 2) {
-          ctx.drawImage(this.dualFrontVideo, 0, halfHeight + 4, width, halfHeight - 4);
+        if (this.dualFrontVideo && this.dualFrontVideo.readyState >= 2) {
+          ctx.drawImage(this.dualFrontVideo, halfWidth, 0, halfWidth, height);
         }
-      } else if (this.singleVideoEl?.readyState >= 2) {
-        ctx.drawImage(this.singleVideoEl, 0, 0, width, height);
+      } else { // Single camera mode
+        // Ensure video is ready before drawing
+        if (this.singleVideoEl && this.singleVideoEl.readyState >= 2) {
+          ctx.drawImage(this.singleVideoEl, 0, 0, width, height);
+        }
       }
 
       this._drawHUD(ctx, width, height);
@@ -287,15 +264,17 @@ class VideoComposer {
     }
     draw();
 
-    const composite = this.compositorCanvas.captureStream(FRAME_RATE);
+    // Capture stream from the compositor canvas
+    this.compositeStream = this.compositorCanvas.captureStream(FRAME_RATE);
+    // Add the audio track from the primary stream (backStream)
     if (this.audioTrack) {
-      composite.addTrack(this.audioTrack);
+      // Stop existing audio tracks in compositeStream if any, before adding new one
+      this.compositeStream.getAudioTracks().forEach(track => track.stop());
+      this.compositeStream.addTrack(this.audioTrack);
     }
-    this.compositeStream = composite;
-    return composite;
   }
 
-  _stopComposite() {
+  _stopCompositeDrawing() {
     if (this.dualAnimationFrame) {
       cancelAnimationFrame(this.dualAnimationFrame);
       this.dualAnimationFrame = null;
@@ -306,30 +285,17 @@ class VideoComposer {
     }
   }
 
-  _stopSupplementaryStreams() {
-    if (this.frontStream) {
-      this.frontStream.getTracks().forEach(track => track.stop());
-      this.frontStream = null;
-    }
-    if (this.backStream) {
-      this.backStream.getTracks().forEach(track => track.stop());
-      this.backStream = null;
-    }
-  }
-
   async _playVideo(videoEl) {
-    console.log('Attempting to play video element:', videoEl.id);
+    if (!videoEl) return;
     videoEl.muted = true;
     videoEl.playsInline = true;
     videoEl.setAttribute('playsinline', 'true');
+    // Wait for metadata to be loaded before attempting to play
     if (videoEl.readyState < 1) {
-      console.log('Video readyState is < 1, waiting for loadedmetadata');
       await new Promise(res => videoEl.addEventListener('loadedmetadata', res, { once: true }));
-      console.log('loadedmetadata event fired');
     }
     try {
       await videoEl.play();
-      console.log('videoEl.play() resolved for:', videoEl.id);
     } catch (error) {
       console.error('Error playing video:', error);
     }
@@ -389,12 +355,9 @@ class VideoComposer {
 
   _getMimeType() {
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    const mimeTypes = [
-        'video/mp4; codecs="avc1.42E01E"',
-        'video/mp4',
-        'video/webm; codecs="vp9"',
-        'video/webm; codecs="vp8"',
-    ];
+    const mimeTypes = isSafari
+      ? ['video/mp4; codecs="avc1.42E01E"', 'video/mp4']
+      : ['video/webm; codecs="vp9"', 'video/webm; codecs="vp8"', 'video/mp4; codecs="avc1.42E01E"'];
 
     for (const mime of mimeTypes) {
       if (MediaRecorder.isTypeSupported(mime)) {
@@ -405,79 +368,28 @@ class VideoComposer {
     return null;
   }
 
-  startRecording(onChunkAvailable, enableButtons) {
-    if (!this.stream) {
-      console.error('No stream available for recording.');
+  startRecording(onChunkAvailable) { // Removed enableButtons as it's not used here
+    if (!this.compositeStream) {
+      console.error('Composite stream not available for recording.');
       return false;
     }
 
     const mimeType = this._getMimeType();
     if (!mimeType) return false;
 
-    // Ensure the composite stream is created and used for recording
-    if (!this.compositeStream) {
-      // If compositeStream is not yet created (e.g., in single camera mode),
-      // create it now using the current camera stream.
-      this.compositeStream = this.compositorCanvas.captureStream(FRAME_RATE);
-      if (this.audioTrack) {
-        this.compositeStream.addTrack(this.audioTrack);
-      }
-      // Start the drawing loop for the compositor canvas
-      const draw = () => {
-        const ctx = this.compositorCtx;
-        const width = this.compositorCanvas.width;
-        const height = this.compositorCanvas.height;
-
-        ctx.clearRect(0, 0, width, height);
-
-        if (this.isDualCamera) {
-          const halfHeight = height / 2;
-          if (this.dualBackVideo?.readyState >= 2) {
-            ctx.drawImage(this.dualBackVideo, 0, 0, width, halfHeight - 4);
-          }
-          if (this.dualFrontVideo?.readyState >= 2) {
-            ctx.drawImage(this.dualFrontVideo, 0, halfHeight + 4, width, halfHeight - 4);
-          }
-        } else if (this.singleVideoEl?.readyState >= 2) {
-          ctx.drawImage(this.singleVideoEl, 0, 0, width, height);
-        }
-
-        this._drawHUD(ctx, width, height);
-
-        this.dualAnimationFrame = requestAnimationFrame(draw);
-      };
-
-      if (this.dualAnimationFrame) {
-        cancelAnimationFrame(this.dualAnimationFrame);
-      }
-      draw();
-    }
-
-    const finalStream = this.compositeStream;
-
-    this.mediaRecorder = new MediaRecorder(finalStream, { mimeType });
+    this.mediaRecorder = new MediaRecorder(this.compositeStream, { mimeType });
     this.recordedBlobs = [];
 
     this.mediaRecorder.ondataavailable = (event) => {
-      console.log('ondataavailable event fired');
       if (event.data && event.data.size > 0) {
         this.recordedBlobs.push(event.data);
-        console.log(`Video chunk available: ${event.data.size} bytes. Total chunks: ${this.recordedBlobs.length}`);
         onChunkAvailable(event.data);
-      } else {
-        console.log('event.data is empty or size is 0');
       }
     };
 
     this.mediaRecorder.onstop = () => {
-      console.log('MediaRecorder stopped. Final recorded blobs count:', this.recordedBlobs.length);
-      const mime = this.mediaRecorder.mimeType;
-      const blob = new Blob(this.recordedBlobs, { type: mime });
-      if (blob.size > 0) {
-        enableButtons(blob);
-      } else {
-        alert('Recording failed or unsupported codec.');
-      }
+      // The onstop handler is now primarily for cleanup and signaling completion
+      // The final blob is handled by stopRecording()
     };
 
     this.mediaRecorder.onerror = (event) => {
@@ -491,21 +403,21 @@ class VideoComposer {
       this.mediaRecorder.start(CHUNK_DURATION_MS);
     }
 
-    console.log('MediaRecorder started with MIME type:', mimeType, 'State:', this.mediaRecorder.state);
+    this.state.isRecording = true;
     return true;
   }
 
   async stopRecording() {
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      console.log('Stopping MediaRecorder. Current state:', this.mediaRecorder.state);
       return new Promise(resolve => {
         this.mediaRecorder.addEventListener('stop', () => {
-          const mime = this.mediaRecorder.mimeType;
-          const blob = new Blob(this.recordedBlobs, { type: mime });
+          const blob = new Blob(this.recordedBlobs, { type: this.mediaRecorder.mimeType });
           this.recordedBlobs = [];
+          this.state.isRecording = false;
           if (blob.size > 0) {
             resolve(blob);
-          } else {
+          }
+          else {
             console.warn('No video blobs were recorded.');
             resolve(null);
           }
@@ -516,22 +428,31 @@ class VideoComposer {
     console.warn('MediaRecorder not active or not initialized.');
     return null;
   }
+
   setHUD(hudData) {
     this.hud = { ...this.hud, ...hudData };
   }
 
   _drawHUD(ctx, width, height) {
+    // Draw a semi-transparent black rectangle at the bottom for the HUD background
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(0, height - 50, width, 50);
+    ctx.fillRect(0, height - 50, width, 50); // Adjust size as needed
 
     ctx.fillStyle = 'white';
-    ctx.font = '20px Arial';
+    ctx.font = '20px Arial'; // Adjust font size and family as needed
+    ctx.textBaseline = 'middle'; // Align text vertically in the middle of the line
+
+    // Speed (left aligned)
     ctx.textAlign = 'left';
-    ctx.fillText(this.hud.speed, 10, height - 20);
+    ctx.fillText(this.hud.speed, 10, height - 25); // 25 is half of 50, to center vertically
+
+    // Time (center aligned)
     ctx.textAlign = 'center';
-    ctx.fillText(this.hud.time, width / 2, height - 20);
+    ctx.fillText(this.hud.time, width / 2, height - 25);
+
+    // Distance (right aligned)
     ctx.textAlign = 'right';
-    ctx.fillText(this.hud.distance, width - 10, height - 20);
+    ctx.fillText(this.hud.distance, width - 10, height - 25);
   }
 }
 

@@ -9,7 +9,7 @@ import { getTrips, writeVideoToOpfs, clearVideoChunks, readVideoFromOpfs, delete
 
 document.addEventListener('DOMContentLoaded', async () => {
   const videoContainer = document.getElementById('videoContainer');
-  const singleVideoFeed = document.getElementById('singleVideoFeed');
+  const cameraFeed = document.getElementById('cameraFeed'); // Corrected ID
   const dualVideoContainer = document.getElementById('dualVideoContainer');
   const dualFrontVideo = document.getElementById('dualFrontVideo');
   const dualBackVideo = document.getElementById('dualBackVideo');
@@ -36,6 +36,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingsModalContent = document.getElementById('settingsModalContent');
   const settingsModalClose = document.getElementById('settingsModalClose');
 
+  const btnSingle = document.getElementById('btnSingle');
+  const btnDual = document.getElementById('btnDual');
+  const btnFacingUser = document.getElementById('btnFacingUser');
+  const btnFacingEnvironment = document.getElementById('btnFacingEnvironment');
+
   const pastTripsOverlay = document.getElementById('pastTripsOverlay');
   const pastTripsClose = document.getElementById('pastTripsClose');
   const tripList = document.getElementById('tripList');
@@ -61,7 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let speedUnit = 'KPH'; // Default speed unit
   const liveHUD = new LiveHUD({ hudSpeed, hudDistance, hudTime, speedUnit }); // Pass elements to LiveHUD
   const videoComposer = new VideoComposer({
-    singleVideoEl: singleVideoFeed,
+    singleVideoEl: cameraFeed, // Corrected to cameraFeed
     dualContainer: dualVideoContainer,
     dualFrontVideo,
     dualBackVideo,
@@ -69,17 +74,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mapView = new MapView({ container: mapContainer });
 
   let currentMode = 'camera'; // 'camera' or 'map'
-  let currentCapture = 'single'; // 'single' or 'dual'
-  let currentFacing = 'user'; // 'environment' or 'user'
   let isRecording = false;
   let wakeLock = null;
 
   // UI Update Functions
   const updateUI = () => {
-    currentCaptureSetting.textContent = currentCapture.charAt(0).toUpperCase() + currentCapture.slice(1);
-    currentFacingSetting.textContent = currentFacing.charAt(0).toUpperCase() + currentFacing.slice(1);
+    currentCaptureSetting.textContent = videoComposer.state.captureMode.charAt(0).toUpperCase() + videoComposer.state.captureMode.slice(1);
+    currentFacingSetting.textContent = videoComposer.state.facing.charAt(0).toUpperCase() + videoComposer.state.facing.slice(1);
     currentRecordingModeSetting.textContent = currentMode.charAt(0).toUpperCase() + currentMode.slice(1);
     currentSpeedUnit.textContent = speedUnit;
+
+    // Update active states for capture mode buttons
+    btnSingle.setAttribute('aria-pressed', videoComposer.state.captureMode === 'single');
+    btnDual.setAttribute('aria-pressed', videoComposer.state.captureMode === 'dual');
+
+    // Update active states for facing buttons
+    btnFacingUser.setAttribute('aria-pressed', videoComposer.state.facing === 'user');
+    btnFacingEnvironment.setAttribute('aria-pressed', videoComposer.state.facing === 'environment');
 
     if (isRecording) {
       startStopButton.innerHTML = '<span class="relative z-10">Stop Trip</span><span class="absolute inset-0 rounded-full animate-glowPulse"></span>';
@@ -385,17 +396,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const startCamera = async () => {
-    let success = false;
-    if (currentCapture === 'dual') {
-      success = await videoComposer.startDual();
-      if (!success) {
-        currentCapture = 'single';
-        updateUI();
-      }
-    } else {
-      success = await videoComposer.startSingle({ facing: currentFacing });
-    }
-
+    // The videoComposer.setCaptureMode will handle starting the appropriate camera streams
+    // based on the current state.captureMode and state.facing.
+    const success = await videoComposer.setCaptureMode(videoComposer.state.captureMode);
     if (!success) {
       alert('Could not start camera. Please check permissions and ensure the camera is not in use by another app.');
     }
@@ -403,16 +406,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const stopCamera = () => {
-    videoComposer.stopCamera();
+    videoComposer.stopStreams();
   };
 
   const startRecording = async () => {
     if (isRecording) return;
 
-    if (!videoComposer.stream) {
-      alert('Camera not available. Please ensure permissions are granted and the camera is not in use.');
+    // Ensure camera is started before recording
+    if (!videoComposer.compositeStream) {
       const cameraStarted = await startCamera();
       if (!cameraStarted) {
+        alert('Camera not available. Please ensure permissions are granted and the camera is not in use.');
         return;
       }
     }
@@ -490,7 +494,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const currentTripData = tripRecorder.getCurrentTrip();
       if (currentTripData && currentTripData.points.length > 0) {
         mapView.fitBoundsToPoints(currentTripData.points);
-      }
+      }D
     }
 
     const finalVideoBlob = await videoComposer.stopRecording();
@@ -500,15 +504,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         await writeVideoToOpfs(videoFilename, finalVideoBlob);
         console.log('Final video successfully saved to OPFS:', videoFilename);
-        await tripRecorder.stopTrip({ videoFilename });
         await clearVideoChunks();
+        await tripRecorder.stopTrip({ videoFilename });
       } catch (error) {
         console.error('Error saving final video to OPFS:', error);
       }
     } else {
       console.warn('No final video blob to save.');
-      await tripRecorder.stopTrip();
       await clearVideoChunks();
+      await tripRecorder.stopTrip();
     }
   };
 
@@ -556,14 +560,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         { label: 'Single Camera', value: 'single' },
         { label: 'Dual Camera', value: 'dual' },
       ],
-      currentCapture,
+      videoComposer.state.captureMode,
       async (selection) => {
-        currentCapture = selection;
+        await videoComposer.setCaptureMode(selection);
         updateUI();
-        if (isRecording) {
-          stopCamera();
-          await startCamera();
-        }
       }
     );
   });
@@ -575,14 +575,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         { label: 'Environment (Rear)', value: 'environment' },
         { label: 'User (Front)', value: 'user' },
       ],
-      currentFacing,
+      videoComposer.state.facing,
       async (selection) => {
-        currentFacing = selection;
+        await videoComposer.setFacing(selection);
         updateUI();
-        if (isRecording) {
-          stopCamera();
-          await startCamera();
-        }
       }
     );
   });
@@ -614,6 +610,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   pastTripsButton.addEventListener('click', showPastTripsOverlay);
+
+  // Event listeners for the modal buttons directly
+  btnSingle.addEventListener('click', async () => {
+    await videoComposer.setCaptureMode('single');
+    updateUI();
+    hideModal();
+  });
+
+  btnDual.addEventListener('click', async () => {
+    await videoComposer.setCaptureMode('dual');
+    updateUI();
+    hideModal();
+  });
+
+  btnFacingUser.addEventListener('click', async () => {
+    await videoComposer.setFacing('user');
+    updateUI();
+    hideModal();
+  });
+
+  btnFacingEnvironment.addEventListener('click', async () => {
+    await videoComposer.setFacing('environment');
+    updateUI();
+    hideModal();
+  });
 
   // Initial UI update
   updateUI();
