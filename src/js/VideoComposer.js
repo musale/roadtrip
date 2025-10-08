@@ -1,7 +1,5 @@
-// src/js/VideoComposer.js
-
-const VIDEO_WIDTH = 640;
-const VIDEO_HEIGHT = 480;
+const VIDEO_WIDTH = 1280; // Internal resolution for processing
+const VIDEO_HEIGHT = 720; // Internal resolution for processing
 const FRAME_RATE = 30;
 const CHUNK_DURATION_MS = 1000; // 1 second chunks
 
@@ -33,12 +31,24 @@ class VideoComposer {
     this.dualAnimationFrame = null;
     this.compositeStream = null;
 
+    // Compositor canvas for recording
+    this.compositorCanvas = document.createElement('canvas');
+    this.compositorCanvas.width = VIDEO_WIDTH;
+    this.compositorCanvas.height = VIDEO_HEIGHT;
+    this.compositorCtx = this.compositorCanvas.getContext('2d');
+
     // Low power mode detection
     this.lowPowerMode = false;
     this.lastFrameTime = 0;
     this.frameCount = 0;
     this.fpsCheckInterval = null;
     this.frameCounterId = null;
+
+    this.hud = {
+      speed: '0.0 MPH',
+      distance: '0.0 MI',
+      time: '00:00:00',
+    };
   }
 
   async hasOPFS() {
@@ -73,9 +83,9 @@ class VideoComposer {
     this.isUserFacing = facing === 'user';
 
     const constraintsToTry = [
-      { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: { ideal: facing } }, audio: true },
+      { video: { width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT }, facingMode: { ideal: facing } }, audio: true },
       { video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: { ideal: facing } }, audio: true },
-      { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true },
+      { video: { width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } }, audio: true },
       { video: { width: { ideal: 640 }, height: { ideal: 480 } }, audio: true },
       { video: true, audio: true }
     ];
@@ -248,29 +258,26 @@ class VideoComposer {
   }
 
   _createCompositeStream() {
-    if (!this.dualCanvas) {
-      this.dualCanvas = document.createElement('canvas');
-      this.dualCanvas.width = VIDEO_WIDTH;
-      this.dualCanvas.height = VIDEO_HEIGHT * 2;
-      this.dualCtx = this.dualCanvas.getContext('2d');
-    }
-
     const draw = () => {
-      if (!this.dualCtx) return;
-      const ctx = this.dualCtx;
-      const width = this.dualCanvas.width;
-      const height = this.dualCanvas.height;
-      const halfHeight = height / 2;
+      const ctx = this.compositorCtx;
+      const width = this.compositorCanvas.width;
+      const height = this.compositorCanvas.height;
 
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, width, height);
+      ctx.clearRect(0, 0, width, height);
 
-      if (this.dualBackVideo?.readyState >= 2) {
-        ctx.drawImage(this.dualBackVideo, 0, 0, width, halfHeight - 4);
+      if (this.isDualCamera) {
+        const halfHeight = height / 2;
+        if (this.dualBackVideo?.readyState >= 2) {
+          ctx.drawImage(this.dualBackVideo, 0, 0, width, halfHeight - 4);
+        }
+        if (this.dualFrontVideo?.readyState >= 2) {
+          ctx.drawImage(this.dualFrontVideo, 0, halfHeight + 4, width, halfHeight - 4);
+        }
+      } else if (this.singleVideoEl?.readyState >= 2) {
+        ctx.drawImage(this.singleVideoEl, 0, 0, width, height);
       }
-      if (this.dualFrontVideo?.readyState >= 2) {
-        ctx.drawImage(this.dualFrontVideo, 0, halfHeight + 4, width, halfHeight - 4);
-      }
+
+      this._drawHUD(ctx, width, height);
 
       this.dualAnimationFrame = requestAnimationFrame(draw);
     };
@@ -280,7 +287,7 @@ class VideoComposer {
     }
     draw();
 
-    const composite = this.dualCanvas.captureStream(FRAME_RATE);
+    const composite = this.compositorCanvas.captureStream(FRAME_RATE);
     if (this.audioTrack) {
       composite.addTrack(this.audioTrack);
     }
@@ -382,9 +389,12 @@ class VideoComposer {
 
   _getMimeType() {
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    const mimeTypes = isSafari
-      ? ['video/mp4; codecs="avc1.42E01E"', 'video/mp4']
-      : ['video/webm; codecs="vp9"', 'video/webm; codecs="vp8"', 'video/mp4; codecs="avc1.42E01E"'];
+    const mimeTypes = [
+        'video/mp4; codecs="avc1.42E01E"',
+        'video/mp4',
+        'video/webm; codecs="vp9"',
+        'video/webm; codecs="vp8"',
+    ];
 
     for (const mime of mimeTypes) {
       if (MediaRecorder.isTypeSupported(mime)) {
@@ -404,11 +414,46 @@ class VideoComposer {
     const mimeType = this._getMimeType();
     if (!mimeType) return false;
 
-    const finalStream = new MediaStream();
-    this.stream.getVideoTracks().forEach(track => finalStream.addTrack(track));
-    if (this.audioTrack) {
-      finalStream.addTrack(this.audioTrack);
+    // Ensure the composite stream is created and used for recording
+    if (!this.compositeStream) {
+      // If compositeStream is not yet created (e.g., in single camera mode),
+      // create it now using the current camera stream.
+      this.compositeStream = this.compositorCanvas.captureStream(FRAME_RATE);
+      if (this.audioTrack) {
+        this.compositeStream.addTrack(this.audioTrack);
+      }
+      // Start the drawing loop for the compositor canvas
+      const draw = () => {
+        const ctx = this.compositorCtx;
+        const width = this.compositorCanvas.width;
+        const height = this.compositorCanvas.height;
+
+        ctx.clearRect(0, 0, width, height);
+
+        if (this.isDualCamera) {
+          const halfHeight = height / 2;
+          if (this.dualBackVideo?.readyState >= 2) {
+            ctx.drawImage(this.dualBackVideo, 0, 0, width, halfHeight - 4);
+          }
+          if (this.dualFrontVideo?.readyState >= 2) {
+            ctx.drawImage(this.dualFrontVideo, 0, halfHeight + 4, width, halfHeight - 4);
+          }
+        } else if (this.singleVideoEl?.readyState >= 2) {
+          ctx.drawImage(this.singleVideoEl, 0, 0, width, height);
+        }
+
+        this._drawHUD(ctx, width, height);
+
+        this.dualAnimationFrame = requestAnimationFrame(draw);
+      };
+
+      if (this.dualAnimationFrame) {
+        cancelAnimationFrame(this.dualAnimationFrame);
+      }
+      draw();
     }
+
+    const finalStream = this.compositeStream;
 
     this.mediaRecorder = new MediaRecorder(finalStream, { mimeType });
     this.recordedBlobs = [];
@@ -441,7 +486,7 @@ class VideoComposer {
 
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
     if (isSafari) {
-      this.mediaRecorder.start();
+      this.mediaRecorder.start(); // Safari doesn't support timeslice
     } else {
       this.mediaRecorder.start(CHUNK_DURATION_MS);
     }
@@ -470,6 +515,23 @@ class VideoComposer {
     }
     console.warn('MediaRecorder not active or not initialized.');
     return null;
+  }
+  setHUD(hudData) {
+    this.hud = { ...this.hud, ...hudData };
+  }
+
+  _drawHUD(ctx, width, height) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, height - 50, width, 50);
+
+    ctx.fillStyle = 'white';
+    ctx.font = '20px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText(this.hud.speed, 10, height - 20);
+    ctx.textAlign = 'center';
+    ctx.fillText(this.hud.time, width / 2, height - 20);
+    ctx.textAlign = 'right';
+    ctx.fillText(this.hud.distance, width - 10, height - 20);
   }
 }
 

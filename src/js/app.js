@@ -438,7 +438,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Start video recording
     videoComposer.startRecording(async (chunk) => {
       // Progressively save video chunks
-      const filename = `video-chunk-${Date.now()}.webm`; // Or mp4
+      const filename = `video-chunk-${Date.now()}.mp4`; // Or mp4
       await writeVideoToOpfs(filename, chunk);
       // Optionally, save chunk metadata to IndexedDB if needed for recovery
     });
@@ -452,6 +452,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           elapsedMs: tripData.live.elapsedMs,
           distanceM: tripData.stats.distanceM,
           headingDeg: tripData.live.headingDeg,
+        });
+        videoComposer.setHUD({
+            speed: hudSpeed.textContent,
+            distance: hudDistance.textContent,
+            time: hudTime.textContent,
         });
         if (currentMode === 'map') {
           mapView.updateLiveTrack(tripData.points);
@@ -491,7 +496,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const finalVideoBlob = await videoComposer.stopRecording();
     if (finalVideoBlob) {
       console.log('Final video blob created, size:', finalVideoBlob.size, 'type:', finalVideoBlob.type);
-      const videoFilename = `roadtrip-${Date.now()}.webm`;
+      const videoFilename = `roadtrip-${Date.now()}.mp4`;
       try {
         await writeVideoToOpfs(videoFilename, finalVideoBlob);
         console.log('Final video successfully saved to OPFS:', videoFilename);
