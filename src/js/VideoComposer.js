@@ -29,7 +29,7 @@ class VideoComposer {
     // Internal state
     this.state = {
       captureMode: 'single',      // 'single' | 'dual'
-      facing: 'environment',      // 'user' | 'environment' (single only)
+      facing: 'user',      // 'user' | 'environment' (single only)
       backStream: null,
       frontStream: null,
       isRecording: false
@@ -120,7 +120,7 @@ class VideoComposer {
     this._setDisplayMode('single');
     this.singleVideoEl.srcObject = stream;
     await this._playVideo(this.singleVideoEl);
-    this._applyMirror(this.singleVideoEl, this.state.facing === 'user');
+    this._applyMirror(this.singleVideoEl, false); // Do not apply mirror for single camera, let browser handle default mirroring
 
     this._startCompositeDrawing();
     this._startFpsCheck();
