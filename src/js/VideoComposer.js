@@ -1,7 +1,7 @@
 // src/js/VideoComposer.js
 
-const VIDEO_WIDTH = 1280;
-const VIDEO_HEIGHT = 720;
+const VIDEO_WIDTH = 640;
+const VIDEO_HEIGHT = 480;
 const FRAME_RATE = 30;
 const CHUNK_DURATION_MS = 1000; // 1 second chunks
 
@@ -72,44 +72,29 @@ class VideoComposer {
     this.facingMode = facing;
     this.isUserFacing = facing === 'user';
 
+    const constraintsToTry = [
+      { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: { ideal: facing } }, audio: true },
+      { video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: { ideal: facing } }, audio: true },
+      { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true },
+      { video: { width: { ideal: 640 }, height: { ideal: 480 } }, audio: true },
+      { video: true, audio: true }
+    ];
+
     let stream = null;
-    const videoConstraints = {
-      facingMode: { ideal: facing },
-      width: { ideal: VIDEO_WIDTH },
-      height: { ideal: VIDEO_HEIGHT }
-    };
-
-    stream = await this._getMediaStream(videoConstraints);
-
-    if (!stream) {
-      const cameras = await this.listCameras();
-      const desiredCamera = cameras.find(camera => {
-        const label = camera.label.toLowerCase();
-        return facing === 'user'
-          ? label.includes('front') || label.includes('user')
-          : label.includes('back') || label.includes('rear') || label.includes('environment');
-      });
-      if (desiredCamera) {
-        const specificConstraints = { deviceId: { exact: desiredCamera.deviceId }, width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } };
-        stream = await this._getMediaStream(specificConstraints);
+    for (const constraints of constraintsToTry) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (stream) {
+          console.log('Successfully acquired media stream with constraints:', constraints);
+          break;
+        }
+      } catch (error) {
+        console.warn(`Failed to get media stream with constraints:`, constraints, error);
       }
     }
 
     if (!stream) {
-      const generalFacingConstraints = { facingMode: facing, width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } };
-      stream = await this._getMediaStream(generalFacingConstraints);
-    }
-
-    if (!stream) {
-      const anyCameraConstraints = { width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } };
-      stream = await this._getMediaStream(anyCameraConstraints);
-      if (stream) {
-        this.isUserFacing = false;
-      }
-    }
-
-    if (!stream) {
-      console.error('Failed to acquire camera stream for single mode.');
+      console.error('Failed to acquire camera stream for single mode after trying all constraints.');
       return false;
     }
 
@@ -326,13 +311,21 @@ class VideoComposer {
   }
 
   async _playVideo(videoEl) {
+    console.log('Attempting to play video element:', videoEl.id);
     videoEl.muted = true;
     videoEl.playsInline = true;
     videoEl.setAttribute('playsinline', 'true');
     if (videoEl.readyState < 1) {
+      console.log('Video readyState is < 1, waiting for loadedmetadata');
       await new Promise(res => videoEl.addEventListener('loadedmetadata', res, { once: true }));
+      console.log('loadedmetadata event fired');
     }
-    await videoEl.play();
+    try {
+      await videoEl.play();
+      console.log('videoEl.play() resolved for:', videoEl.id);
+    } catch (error) {
+      console.error('Error playing video:', error);
+    }
   }
 
   _startFpsCheck() {
@@ -421,10 +414,13 @@ class VideoComposer {
     this.recordedBlobs = [];
 
     this.mediaRecorder.ondataavailable = (event) => {
+      console.log('ondataavailable event fired');
       if (event.data && event.data.size > 0) {
         this.recordedBlobs.push(event.data);
-        console.log(`Video chunk available: ${event.data.size} bytes`);
+        console.log(`Video chunk available: ${event.data.size} bytes. Total chunks: ${this.recordedBlobs.length}`);
         onChunkAvailable(event.data);
+      } else {
+        console.log('event.data is empty or size is 0');
       }
     };
 

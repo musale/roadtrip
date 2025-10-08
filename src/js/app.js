@@ -385,16 +385,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const startCamera = async () => {
+    let success = false;
     if (currentCapture === 'dual') {
-      const success = await videoComposer.startDual();
+      success = await videoComposer.startDual();
       if (!success) {
         currentCapture = 'single';
         updateUI();
       }
-      return success;
+    } else {
+      success = await videoComposer.startSingle({ facing: currentFacing });
     }
 
-    return videoComposer.startSingle({ facing: currentFacing });
+    if (!success) {
+      alert('Could not start camera. Please check permissions and ensure the camera is not in use by another app.');
+    }
+    return success;
   };
 
   const stopCamera = () => {
@@ -403,6 +408,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const startRecording = async () => {
     if (isRecording) return;
+
+    if (!videoComposer.stream) {
+      alert('Camera not available. Please ensure permissions are granted and the camera is not in use.');
+      const cameraStarted = await startCamera();
+      if (!cameraStarted) {
+        return;
+      }
+    }
 
     isRecording = true;
     updateUI();
