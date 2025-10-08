@@ -247,6 +247,19 @@ class VideoComposer {
         if (this.dualFrontVideo && this.dualFrontVideo.readyState >= 2) {
           ctx.drawImage(this.dualFrontVideo, halfWidth, 0, halfWidth, height);
         }
+
+        // Draw camera labels for dual mode
+        ctx.fillStyle = 'white';
+        ctx.font = '16px Arial'; // Smaller font for labels
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+
+        // Back Camera label (top-right of left half)
+        ctx.fillText('Back Camera', halfWidth - 10, 10);
+
+        // Front Camera label (top-right of right half)
+        ctx.fillText('Front Camera', width - 10, 10);
+
       } else { // Single camera mode
         // Ensure video is ready before drawing
         if (this.singleVideoEl && this.singleVideoEl.readyState >= 2) {
