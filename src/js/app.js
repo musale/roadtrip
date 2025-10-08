@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('app').appendChild(mapContainer);
 
   const tripRecorder = new TripRecorder();
-  let speedUnit = 'MPH'; // Default speed unit
+  let speedUnit = 'KPH'; // Default speed unit
   const liveHUD = new LiveHUD({ hudSpeed, hudDistance, hudTime, speedUnit }); // Pass elements to LiveHUD
   const videoComposer = new VideoComposer({
     singleVideoEl: singleVideoFeed,
