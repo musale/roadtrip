@@ -606,6 +606,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         const result = await videoComposer.setCaptureMode('dual', { forceRestart: true });
         handleCameraResult(result);
         if (result.success) {
+          if (navigator?.mediaDevices?.enumerateDevices) {
+            try {
+              const rawDevices = await navigator.mediaDevices.enumerateDevices();
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+              const dump = rawDevices.map(device => ({
+                kind: device.kind,
+                label: device.label,
+                deviceId: device.deviceId,
+                groupId: device.groupId,
+              }));
+              const blob = new Blob([JSON.stringify({
+                generatedAt: timestamp,
+                selected: {
+                  backDeviceId: selectionState.back,
+                  frontDeviceId: selectionState.front,
+                },
+                devices: dump,
+              }, null, 2)], { type: 'application/json' });
+              const filename = `roadtrip-devices-${timestamp}.json`;
+              downloadBlob(blob, filename);
+            } catch (deviceError) {
+              console.warn('Could not export device inventory:', deviceError);
+              showNotification('Dual cameras set, but exporting device list failed.', { variant: 'warning' });
+            }
+          } else {
+            showNotification('Dual cameras set, but device export is unavailable in this browser.', { variant: 'warning' });
+          }
           updateUI();
           hideModal();
         } else {
