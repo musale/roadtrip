@@ -594,10 +594,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const textContainer = document.createElement('div');
         textContainer.className = 'flex flex-col';
 
-        const primaryLabel = document.createElement('span');
-        primaryLabel.className = 'text-sm text-white';
-        primaryLabel.textContent = device.label || `Camera ${index + 1}`;
-        textContainer.appendChild(primaryLabel);
+  const primaryLabel = document.createElement('span');
+  primaryLabel.className = 'text-sm text-white';
+  primaryLabel.textContent = device.label || `Camera ${index + 1}`;
+  textContainer.appendChild(primaryLabel);
+
+  const deviceIdLabel = document.createElement('span');
+  deviceIdLabel.className = 'text-[11px] text-white/50 break-all';
+  deviceIdLabel.textContent = `ID: ${device.deviceId}`;
+  textContainer.appendChild(deviceIdLabel);
 
   const facingHint = facingDescription(item);
         if (facingHint) {
