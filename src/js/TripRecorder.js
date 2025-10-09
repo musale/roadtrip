@@ -3,6 +3,11 @@
 import { addTrip } from './storage/db.js';
 
 const HAVERSINE_RADIUS_KM = 6371;
+const GEOLOCATION_OPTIONS = {
+  enableHighAccuracy: true,
+  maximumAge: 0,
+  timeout: 5000,
+};
 
 /**
  * Escapes special characters in a string for use in XML content.
@@ -40,6 +45,11 @@ class TripRecorder {
     this.speedReadings = [];
     this.maxSpeedKph = 0;
     this.driveType = 'Long Drive'; // Default drive type
+    this.isPaused = false;
+    this.pauseStartTime = null;
+    this.totalPausedMs = 0;
+    this.pauseEvents = [];
+    this._resumeEventPending = false;
   }
 
   /**
@@ -57,7 +67,7 @@ class TripRecorder {
 
 
   startTrip() {
-    if (this.watchId) {
+    if (this.watchId || this.currentTrip) {
       console.warn("Trip already in progress.");
       return;
     }
@@ -76,6 +86,7 @@ class TripRecorder {
         maxKph: 0,
         movingTime: 0,
       },
+      pauseEvents: [],
     };
     this.points = [];
     this.startTime = Date.now();
@@ -87,37 +98,43 @@ class TripRecorder {
     this.lastPosition = null;
     this.speedReadings = [];
     this.maxSpeedKph = 0;
+    this.isPaused = false;
+    this.pauseStartTime = null;
+    this.totalPausedMs = 0;
+    this.pauseEvents = [];
+    this._resumeEventPending = false;
+    this.currentTrip.pauseEvents = this.pauseEvents;
 
-    const options = {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 5000,
-    };
-
-    this.watchId = navigator.geolocation.watchPosition(
-      this._handlePosition.bind(this),
-      this._handlePositionError.bind(this),
-      options
-    );
+    this._startGeolocationWatch();
     console.log("Trip started.");
   }
 
   async stopTrip({ videoFilename = null } = {}) {
-    if (!this.watchId) {
+    if (!this.currentTrip) {
       console.warn("No trip in progress.");
       return;
     }
 
-    navigator.geolocation.clearWatch(this.watchId);
-    this.watchId = null;
+    if (this.watchId) {
+      navigator.geolocation.clearWatch(this.watchId);
+      this.watchId = null;
+    }
+
+    if (this.isPaused && this.pauseStartTime) {
+      this.totalPausedMs += Date.now() - this.pauseStartTime;
+      this.pauseStartTime = null;
+    }
+
+    this.isPaused = false;
     this.currentTrip.endedAt = Date.now();
     this.currentTrip.points = this.points;
     this.currentTrip.stats.distanceM = this.distanceM;
-    this.currentTrip.stats.durationMs = this.currentTrip.endedAt - this.startTime;
+    this.currentTrip.stats.durationMs = this._computeActiveDurationMs(this.currentTrip.endedAt);
     this.currentTrip.stats.maxKph = this.maxSpeedKph;
     this.currentTrip.stats.movingTime = this.movingTime;
     this.currentTrip.stats.avgKph = this.distanceM > 0 ? (this.distanceM / 1000) / (this.movingTime / (1000 * 60 * 60)) : 0;
     this.currentTrip.videoFilename = videoFilename;
+    this.currentTrip.pauseEvents = this.pauseEvents;
 
     // Silently migrate legacy 'workout' property if present
     if (this.currentTrip.type === 'workout') {
@@ -133,6 +150,55 @@ class TripRecorder {
     return tripToReturn;
   }
 
+  pauseTrip() {
+    if (!this.currentTrip || this.isPaused) {
+      console.warn("Trip is not active or already paused.");
+      return null;
+    }
+
+    if (this.watchId) {
+      navigator.geolocation.clearWatch(this.watchId);
+      this.watchId = null;
+    }
+
+    this.isPaused = true;
+    this.pauseStartTime = Date.now();
+
+    const lastPoint = this.points[this.points.length - 1];
+    if (lastPoint) {
+      const pauseEvent = {
+        type: 'pause',
+        t: Date.now(),
+        lat: lastPoint.lat,
+        lon: lastPoint.lon,
+        index: this.points.length - 1,
+      };
+      this.pauseEvents.push(pauseEvent);
+      return pauseEvent;
+    }
+
+    return null;
+  }
+
+  resumeTrip() {
+    if (!this.currentTrip || !this.isPaused) {
+      console.warn("Trip is not paused.");
+      return null;
+    }
+
+    const now = Date.now();
+    if (this.pauseStartTime) {
+      this.totalPausedMs += now - this.pauseStartTime;
+      this.pauseStartTime = null;
+    }
+
+    this.isPaused = false;
+    this.lastPointTime = now;
+    this._resumeEventPending = true;
+    this._startGeolocationWatch();
+    return true;
+  }
+
   _handlePosition(position) {
     const { latitude, longitude, accuracy, speed, heading, altitude } = position.coords;
     const t = Date.now();
@@ -144,6 +210,17 @@ class TripRecorder {
       acc: accuracy,
       alt: altitude,
     };
+
+    if (this._resumeEventPending) {
+      this.pauseEvents.push({
+        type: 'resume',
+        t,
+        lat: latitude,
+        lon: longitude,
+        index: this.points.length,
+      });
+      this._resumeEventPending = false;
+    }
 
     if (this.lastPosition) {
       const { distance, bearing } = this._haversineDistance(
@@ -215,7 +292,7 @@ class TripRecorder {
   getCurrentTrip() {
     if (!this.currentTrip) return null;
 
-    const durationMs = Date.now() - this.startTime;
+    const durationMs = this._computeActiveDurationMs(Date.now());
     const currentAvgKph = this.distanceM > 0 ? (this.distanceM / 1000) / (this.movingTime / (1000 * 60 * 60)) : 0;
 
     // Simple moving average for speed smoothing
@@ -226,6 +303,7 @@ class TripRecorder {
     return {
       ...this.currentTrip,
       points: this.points,
+      pauseEvents: this.pauseEvents,
       stats: {
         distanceM: this.distanceM,
         durationMs: durationMs,
@@ -237,6 +315,7 @@ class TripRecorder {
         speedKph: smoothedSpeedKph,
         headingDeg: this.headingDeg,
         elapsedMs: durationMs,
+        isPaused: this.isPaused,
       }
     };
   }
@@ -340,6 +419,21 @@ class TripRecorder {
       ],
     };
     return new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
+  }
+
+  _startGeolocationWatch() {
+    this.watchId = navigator.geolocation.watchPosition(
+      this._handlePosition.bind(this),
+      this._handlePositionError.bind(this),
+      GEOLOCATION_OPTIONS
+    );
+  }
+
+  _computeActiveDurationMs(referenceTime) {
+    if (!this.startTime) return 0;
+
+    const pausedSoFar = this.totalPausedMs + (this.isPaused && this.pauseStartTime ? referenceTime - this.pauseStartTime : 0);
+    return Math.max(0, referenceTime - this.startTime - pausedSoFar);
   }
 }
 

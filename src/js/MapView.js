@@ -13,8 +13,10 @@ class MapView {
     this.ctx = null;
     this.liveTrackSourceId = 'liveTrack';
     this.currentPointSourceId = 'currentPoint';
+    this.pauseMarkersSourceId = 'pauseMarkers';
     this.follow = false;
     this.currentPoints = [];
+    this.pauseEvents = [];
     this.currentMapCenter = initialCenter;
   }
 
@@ -78,6 +80,32 @@ class MapView {
         },
       });
 
+      this.map.addSource(this.pauseMarkersSourceId, {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
+      });
+
+      this.map.addLayer({
+        id: 'pauseMarkers',
+        type: 'circle',
+        source: this.pauseMarkersSourceId,
+        paint: {
+          'circle-radius': 6,
+          'circle-color': [
+            'match',
+            ['get', 'type'],
+            'pause', '#fbbf24',
+            'resume', '#34d399',
+            '#ffffff'
+          ],
+          'circle-stroke-color': '#111827',
+          'circle-stroke-width': 1.5,
+        },
+      });
+
       // Handle tile loading errors to potentially switch to canvas fallback
       this.map.on('error', (e) => {
         if (e.error && e.error.message.includes('Failed to load style')) {
@@ -119,16 +147,27 @@ class MapView {
   }
 
   _drawCanvasTrack() {
-    if (!this.ctx || this.currentPoints.length < 2) return;
+    if (!this.ctx) return;
 
     this.ctx.clearRect(0, 0, this.canvasFallback.width, this.canvasFallback.height);
 
+    if (this.currentPoints.length < 2) {
+      return;
+    }
+
     // Simple projection for canvas fallback (very basic, not geographically accurate)
     // This would need a proper projection library for real-world use
-    const minLon = Math.min(...this.currentPoints.map(p => p.lon));
-    const maxLon = Math.max(...this.currentPoints.map(p => p.lon));
-    const minLat = Math.min(...this.currentPoints.map(p => p.lat));
-    const maxLat = Math.max(...this.currentPoints.map(p => p.lat));
+    const latLonValues = [...this.currentPoints];
+    if (this.pauseEvents.length > 0) {
+      this.pauseEvents.forEach(event => {
+        latLonValues.push({ lat: event.lat, lon: event.lon });
+      });
+    }
+
+    const minLon = Math.min(...latLonValues.map(p => p.lon));
+    const maxLon = Math.max(...latLonValues.map(p => p.lon));
+    const minLat = Math.min(...latLonValues.map(p => p.lat));
+    const maxLat = Math.max(...latLonValues.map(p => p.lat));
 
     const lonRange = maxLon - minLon;
     const latRange = maxLat - minLat;
@@ -172,14 +211,27 @@ class MapView {
     this.ctx.strokeStyle = '#FFFFFF';
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
+
+    // Draw pause/resume markers
+    this.pauseEvents.forEach(event => {
+      const projectedEvent = project(event.lon, event.lat);
+      this.ctx.beginPath();
+      this.ctx.arc(projectedEvent.x, projectedEvent.y, 5, 0, Math.PI * 2);
+      this.ctx.fillStyle = event.type === 'pause' ? '#fbbf24' : '#34d399';
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#1f2937';
+      this.ctx.lineWidth = 1.5;
+      this.ctx.stroke();
+    });
   }
 
   setFollow(on) {
     this.follow = on;
   }
 
-  updateLiveTrack(points) {
+  updateLiveTrack(points, pauseEvents = []) {
     this.currentPoints = points;
+    this.pauseEvents = pauseEvents;
 
     if (this.map) {
       const geojsonLine = {
@@ -189,7 +241,29 @@ class MapView {
           coordinates: points.map(p => [p.lon, p.lat]),
         },
       };
-      this.map.getSource(this.liveTrackSourceId).setData(geojsonLine);
+      const trackSource = this.map.getSource(this.liveTrackSourceId);
+      if (trackSource) {
+        trackSource.setData(geojsonLine);
+      }
+
+      const markerFeatures = pauseEvents.map(event => ({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [event.lon, event.lat],
+        },
+        properties: {
+          type: event.type,
+          timestamp: event.t,
+        },
+      }));
+      const markerSource = this.map.getSource(this.pauseMarkersSourceId);
+      if (markerSource) {
+        markerSource.setData({
+          type: 'FeatureCollection',
+          features: markerFeatures,
+        });
+      }
 
       if (this.follow && points.length > 0) {
         const lastPoint = points[points.length - 1];

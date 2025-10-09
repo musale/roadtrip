@@ -69,17 +69,24 @@
 
       <!-- Center: Recording Controls -->
       <div class="flex-grow flex items-center justify-center">
-        <div class="flex flex-col items-center gap-4">
+        <div class="flex flex-col items-center gap-6">
           <button id="startStopButton"
-            class="relative px-8 py-4 text-xl md:text-3xl font-heading text-brand bg-black bg-opacity-30 rounded-full shadow-neon transition-all duration-300 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">
+            class="relative px-12 py-4 text-xl md:text-3xl font-heading text-brand bg-black bg-opacity-30 rounded-full shadow-neon transition-all duration-300 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">
             <span class="relative z-10">Start Trip</span>
             <span class="absolute inset-0 rounded-full animate-glowPulse"></span>
           </button>
-          <!-- Mute button, shown only during recording -->
-          <button id="muteButton"
-            class="hidden px-4 py-2 text-sm font-heading text-white bg-black/60 rounded-full shadow-lg border border-white/20 backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">
-            Mute
-          </button>
+          <div class="flex items-center justify-center gap-4 w-full">
+            <!-- Mute button, shown only during recording -->
+            <button id="muteButton"
+              class="hidden w-32 px-4 py-2 text-sm font-heading text-white bg-black/60 rounded-full shadow-lg border border-white/20 backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75 flex items-center justify-center">
+              Mute
+            </button>
+            <!-- Pause/Resume button, shown only during recording -->
+            <button id="pauseResumeButton"
+              class="hidden w-32 px-4 py-2 text-sm font-heading text-black bg-yellow-400/90 rounded-full shadow-lg border border-yellow-200/60 backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-opacity-75 flex items-center justify-center">
+              Pause Trip
+            </button>
+          </div>
         </div>
       </div>
 

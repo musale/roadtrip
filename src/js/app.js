@@ -8,6 +8,7 @@ import VideoComposer from './VideoComposer.js';
 import MapView from './MapView.js';
 import { getTrips, writeVideoToOpfs, clearVideoChunks, readVideoFromOpfs, deleteTrip, clearTrips, deleteVideoFromOpfs } from './storage/db.js';
 import { initShareButton, shareVideo, shareSummaryImage, downloadBlob, debounce, SHARE_MAP_STYLE_URL } from './Share.js';
+import { showNotification } from './Notifications.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const videoContainer = document.getElementById('videoContainer');
@@ -21,6 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const hudTime = document.getElementById('hudTime');
   const startStopButton = document.getElementById('startStopButton');
   const muteButton = document.getElementById('muteButton'); // Mute button
+  const pauseResumeButton = document.getElementById('pauseResumeButton');
   const settingsButton = document.getElementById('settingsButton');
   const settingsMenu = document.getElementById('settingsMenu');
 
@@ -99,6 +101,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let currentMode = 'camera'; // 'camera' or 'map'
   let isRecording = false;
+  let isPaused = false;
   let wakeLock = null;
   let cameraCapabilities = { cameraCount: 0, hasUserFacing: false, hasEnvironmentFacing: false };
   let cameraReady = false;
@@ -289,16 +292,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (isRecording) {
       startStopButton.innerHTML = '<span class="relative z-10">Stop Trip</span><span class="absolute inset-0 rounded-full animate-glowPulse"></span>';
+      startStopButton.classList.toggle('hidden', isPaused);
       liveHud.classList.remove('hidden');
       settingsButton.classList.add('hidden'); // Hide settings during recording
       muteButton.classList.remove('hidden'); // Show mute button
       settingsMenu.classList.add('hidden'); // Ensure menu is hidden
+      pauseResumeButton.classList.remove('hidden');
+      if (isPaused) {
+        pauseResumeButton.textContent = 'Resume Trip';
+        pauseResumeButton.setAttribute('aria-label', 'Resume trip');
+        pauseResumeButton.classList.remove('bg-yellow-400/90', 'border-yellow-200/60');
+        pauseResumeButton.classList.add('bg-emerald-400/90', 'border-emerald-300/60', 'text-black');
+      } else {
+        pauseResumeButton.textContent = 'Pause Trip';
+        pauseResumeButton.setAttribute('aria-label', 'Pause trip');
+        pauseResumeButton.classList.add('bg-yellow-400/90', 'border-yellow-200/60', 'text-black');
+        pauseResumeButton.classList.remove('bg-emerald-400/90', 'border-emerald-300/60');
+      }
     } else {
       startStopButton.innerHTML = '<span class="relative z-10">Start Trip</span><span class="absolute inset-0 rounded-full animate-glowPulse"></span>';
       liveHud.classList.add('hidden');
       settingsButton.classList.remove('hidden'); // Show settings when idle
       muteButton.classList.add('hidden'); // Hide mute button
       muteButton.textContent = 'Mute'; // Reset mute button text
+      pauseResumeButton.classList.add('hidden');
+      pauseResumeButton.textContent = 'Pause Trip';
+      pauseResumeButton.classList.remove('bg-emerald-400/90', 'border-emerald-300/60');
+      pauseResumeButton.classList.add('bg-yellow-400/90', 'border-yellow-200/60', 'text-black');
+      startStopButton.classList.remove('hidden');
     }
 
     // Handle map/camera view
@@ -442,7 +463,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           videoPlayerOverlay.classList.remove('hidden');
           replayVideoPlayer.play().catch(err => console.warn("Replay autoplay prevented:", err));
         } else {
-          alert('Could not retrieve video.');
+          showNotification('Could not retrieve video.', { variant: 'error' });
         }
       });
     }
@@ -534,7 +555,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (videoBlob) {
           shareVideo(videoBlob, trip.videoFilename);
         } else {
-          alert('Could not retrieve video file.');
+          showNotification('Could not retrieve video file.', { variant: 'error' });
         }
       }, 500));
 
@@ -544,7 +565,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (videoBlob) {
           downloadBlob(videoBlob, trip.videoFilename);
         } else {
-          alert('Could not retrieve video file.');
+          showNotification('Could not retrieve video file.', { variant: 'error' });
         }
       }, 500));
     }
@@ -592,7 +613,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await loadAndRenderTrips();
     } catch (error) {
       console.error('Failed to delete trip:', error);
-      alert('Could not delete trip. Please try again.');
+  showNotification('Could not delete trip. Please try again.', { variant: 'error' });
     }
   }
 
@@ -611,7 +632,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await loadAndRenderTrips();
     } catch (error) {
       console.error('Failed to clear trips:', error);
-      alert('Could not clear trips. Please try again.');
+  showNotification('Could not clear trips. Please try again.', { variant: 'error' });
     }
   }
 
@@ -659,6 +680,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     isRecording = true;
+    isPaused = false;
     updateUI();
 
     // Acquire wake lock
@@ -669,7 +691,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.error(`${err.name}, ${err.message}`);
     }
 
-    tripRecorder.startTrip();
+  tripRecorder.startTrip();
     liveHUD.start();
     if (currentMode === 'map') {
       mapView.init();
@@ -688,26 +710,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     const animate = () => {
       const tripData = tripRecorder.getCurrentTrip();
       if (tripData) {
-        liveHUD.update({
-          speedKph: tripData.live.speedKph,
-          elapsedMs: tripData.live.elapsedMs,
-          distanceM: tripData.stats.distanceM,
-          headingDeg: tripData.live.headingDeg,
-        });
-        videoComposer.setHUD({
+        if (!isPaused) {
+          liveHUD.update({
+            speedKph: tripData.live.speedKph,
+            elapsedMs: tripData.live.elapsedMs,
+            distanceM: tripData.stats.distanceM,
+            headingDeg: tripData.live.headingDeg,
+          });
+          videoComposer.setHUD({
             speed: hudSpeed.textContent,
             distance: hudDistance.textContent,
             time: hudTime.textContent,
-        });
+          });
 
-        // Continuously update mute status for video overlay
+          if (currentMode === 'map') {
+            mapView.updateLiveTrack(tripData.points, tripData.pauseEvents || []);
+            if (tripData.points.length > 0) {
+              mapView.setCurrentPoint(tripData.points[tripData.points.length - 1]);
+            }
+          }
+        }
+
         const isMuted = videoComposer.audioTrack ? !videoComposer.audioTrack.enabled : false;
         videoComposer.setMutedState(isMuted);
-
-        if (currentMode === 'map') {
-          mapView.updateLiveTrack(tripData.points);
-          mapView.setCurrentPoint(tripData.points[tripData.points.length - 1]);
-        }
       }
 
       if (isRecording) {
@@ -721,6 +746,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!isRecording) return;
 
     isRecording = false;
+    isPaused = false;
+    videoComposer.resumeCapture();
     updateUI();
 
     // Release wake lock
@@ -821,7 +848,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const showTripSummary = (trip) => {
     if (!trip || !trip.points || trip.points.length < 2) {
-      alert('Trip is too short to display a summary.');
+      showNotification('Trip is too short to display a summary.', { variant: 'info' });
       return;
     }
 
@@ -938,8 +965,71 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
 
+      if (Array.isArray(trip.pauseEvents) && trip.pauseEvents.length > 0) {
+        const pauseFeatures = trip.pauseEvents.map((event, index) => ({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [event.lon, event.lat],
+          },
+          properties: {
+            type: event.type,
+            timestamp: event.t,
+            label: event.type === 'pause' ? `Pause ${index + 1}` : `Resume ${index + 1}`,
+          },
+        }));
+
+        summaryMap.addSource('pause-events', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: pauseFeatures,
+          },
+        });
+
+        summaryMap.addLayer({
+          id: 'pause-events-markers',
+          type: 'circle',
+          source: 'pause-events',
+          paint: {
+            'circle-radius': 5,
+            'circle-color': [
+              'match',
+              ['get', 'type'],
+              'pause', '#fbbf24',
+              'resume', '#34d399',
+              '#e5e7eb'
+            ],
+            'circle-stroke-color': '#111827',
+            'circle-stroke-width': 1.2,
+          },
+        });
+
+        summaryMap.addLayer({
+          id: 'pause-events-labels',
+          type: 'symbol',
+          source: 'pause-events',
+          layout: {
+            'text-field': ['get', 'label'],
+            'text-font': ['Open Sans Bold'],
+            'text-size': 10,
+            'text-offset': [0, 1.2],
+            'text-anchor': 'top',
+          },
+          paint: {
+            'text-color': '#f9fafb',
+            'text-halo-color': '#111827',
+            'text-halo-width': 1,
+          },
+        });
+      }
+
+
       const bounds = new maplibregl.LngLatBounds();
       coords.forEach(coord => bounds.extend(coord));
+      if (Array.isArray(trip.pauseEvents)) {
+        trip.pauseEvents.forEach(event => bounds.extend([event.lon, event.lat]));
+      }
       summaryMap.fitBounds(bounds, { padding: 40, maxZoom: 16, duration: 0 });
     });
 
@@ -970,6 +1060,43 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   muteButton.addEventListener('click', toggleMute);
+
+  const pauseRecording = () => {
+    if (!isRecording || isPaused) return;
+
+    const pauseEvent = tripRecorder.pauseTrip();
+    if (!pauseEvent) {
+      console.warn('Trip paused without position snapshot.');
+    }
+
+    isPaused = true;
+    videoComposer.pauseCapture();
+    showNotification('Trip paused.', { variant: 'info' });
+    updateUI();
+  };
+
+  const resumeRecording = () => {
+    if (!isRecording || !isPaused) return;
+
+    const resumed = tripRecorder.resumeTrip();
+    if (!resumed) {
+      console.warn('Could not resume trip.');
+      return;
+    }
+
+    isPaused = false;
+    videoComposer.resumeCapture();
+    showNotification('Trip resumed.', { variant: 'success' });
+    updateUI();
+  };
+
+  pauseResumeButton.addEventListener('click', () => {
+    if (isPaused) {
+      resumeRecording();
+    } else {
+      pauseRecording();
+    }
+  });
 
   settingsButton.addEventListener('click', (event) => {
     event.stopPropagation();

@@ -1,12 +1,12 @@
 // src/js/Share.js
 
 import maplibregl from 'maplibre-gl';
+import { showNotification } from './Notifications.js';
 
 const SHARE_CANVAS_WIDTH = 1200;
 const SHARE_CANVAS_HEIGHT = 628;
 const MAP_PORTION_RATIO = 0.62;
 const SHARE_CANVAS_PADDING = 48;
-const TOAST_DURATION_MS = 4200;
 const MIN_ROUTE_DISTANCE_METERS = 200; // ~0.2 km minimum before sharing
 
 const MAP_CAPTURE_WIDTH = SHARE_CANVAS_WIDTH;
@@ -58,7 +58,7 @@ export function downloadBlob(blob, filename) {
  */
 export async function shareVideo(blob, filename) {
   if (!blob) {
-    alert('Video data is not available.');
+    showNotification('Video data is not available.', { variant: 'error' });
     return;
   }
   const file = new File([blob], filename, { type: blob.type || 'video/mp4' });
@@ -78,56 +78,12 @@ export async function shareVideo(blob, filename) {
     console.error('Error sharing video:', error);
     // If the user cancels the share, it's not an error we need to show.
     if (error.name !== 'AbortError') {
-      alert('Could not share video. It will be downloaded instead.');
+      showNotification('Could not share video. It will be downloaded instead.', { variant: 'error' });
       downloadBlob(blob, filename);
     }
   }
 }
 
-/**
- * Ensures a toast container exists and returns it.
- * @returns {HTMLElement}
- */
-function ensureToastContainer() {
-  let container = document.getElementById('shareToastContainer');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'shareToastContainer';
-    container.className = 'share-toast-container';
-    container.setAttribute('role', 'status');
-    container.setAttribute('aria-live', 'polite');
-    document.body.appendChild(container);
-  }
-  return container;
-}
-
-/**
- * Displays a transient toast message for share interactions.
- * @param {string} message
- * @param {('info'|'success'|'error')} [variant]
- */
-function showShareToast(message, variant = 'info') {
-  const container = ensureToastContainer();
-  const toast = document.createElement('div');
-  toast.className = 'share-toast';
-  toast.dataset.variant = variant;
-  toast.textContent = message;
-  container.appendChild(toast);
-
-  requestAnimationFrame(() => {
-    toast.classList.add('visible');
-  });
-
-  setTimeout(() => {
-    toast.classList.remove('visible');
-    toast.addEventListener('transitionend', () => {
-      toast.remove();
-      if (!container.hasChildNodes()) {
-        container.remove();
-      }
-    }, { once: true });
-  }, TOAST_DURATION_MS);
-}
 
 function formatDuration(durationMs = 0) {
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
@@ -573,7 +529,7 @@ export async function shareSummaryImage({ map, trip }) {
     }
 
     if (!Array.isArray(trip.points) || trip.points.length < 2) {
-      showShareToast('Trip is too short to share. Record a little longer until we have a full route.', 'error');
+  showNotification('Trip is too short to share. Record a little longer until we have a full route.', { variant: 'error' });
       return;
     }
 
@@ -581,7 +537,7 @@ export async function shareSummaryImage({ map, trip }) {
     if (distanceMeters < MIN_ROUTE_DISTANCE_METERS) {
       const kmNeeded = (MIN_ROUTE_DISTANCE_METERS / 1000).toFixed(2);
       const kmRecorded = (distanceMeters / 1000).toFixed(2);
-      showShareToast(`Trip too short to share (${kmRecorded} km). Record at least ${kmNeeded} km to generate a summary image.`, 'error');
+  showNotification(`Trip too short to share (${kmRecorded} km). Record at least ${kmNeeded} km to generate a summary image.`, { variant: 'error' });
       return;
     }
 
@@ -611,13 +567,13 @@ export async function shareSummaryImage({ map, trip }) {
           text: 'Highlights from my recent drive captured with RoadTrip.',
         });
         shared = true;
-        showShareToast(`Shared summary image${clipboardCopied ? ' and copied to clipboard' : ''}.`, 'success');
+  showNotification(`Shared summary image${clipboardCopied ? ' and copied to clipboard' : ''}.`, { variant: 'success' });
       } catch (error) {
         if (error.name === 'AbortError') {
           console.info('User canceled share dialog. Falling back to download.');
         } else {
           console.error('Error sharing image.', error);
-          showShareToast('Sharing failed. The image was downloaded instead.', 'error');
+          showNotification('Sharing failed. The image was downloaded instead.', { variant: 'error' });
         }
       }
     }
@@ -625,14 +581,14 @@ export async function shareSummaryImage({ map, trip }) {
     if (!shared) {
       downloadBlob(blob, filename);
       if (clipboardCopied) {
-        showShareToast('Summary image downloaded and copied to clipboard.', 'success');
+  showNotification('Summary image downloaded and copied to clipboard.', { variant: 'success' });
       } else {
-        showShareToast('Summary image downloaded. Clipboard copy may not be supported.', 'info');
+  showNotification('Summary image downloaded. Clipboard copy may not be supported.', { variant: 'info' });
       }
     }
   } catch (error) {
     console.error('shareSummaryImage failed:', error);
-    showShareToast(error?.message ?? 'Could not generate summary image.', 'error');
+  showNotification(error?.message ?? 'Could not generate summary image.', { variant: 'error' });
   }
 }
 
@@ -681,7 +637,7 @@ export function initShareButton(trip, summaryMap, getVideoBlob) {
     if (videoBlob) {
       shareVideo(videoBlob, trip.videoFilename);
     } else {
-      alert('Could not retrieve video file.');
+  showNotification('Could not retrieve video file.', { variant: 'error' });
     }
   }, 500);
 

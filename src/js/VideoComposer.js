@@ -48,6 +48,8 @@ class VideoComposer {
       distance: '0.0 KM',
       time: '00:00:00',
     };
+    this.isDrawingPaused = false;
+    this.wasAudioEnabledBeforePause = null;
 
     this.capabilities = {
       cameraCount: 0,
@@ -424,44 +426,36 @@ class VideoComposer {
   }
 
   _startCompositeDrawing() {
+    this.isDrawingPaused = false;
     const draw = () => {
       const ctx = this.compositorCtx;
       const width = this.compositorCanvas.width;
       const height = this.compositorCanvas.height;
 
-      ctx.clearRect(0, 0, width, height);
+      if (!this.isDrawingPaused) {
+        ctx.clearRect(0, 0, width, height);
 
-      if (this.state.captureMode === 'dual') {
-        // Draw dual cameras split-screen
-        const halfWidth = width / 2;
-        // Ensure videos are ready before drawing
-        if (this.dualBackVideo && this.dualBackVideo.readyState >= 2) {
-          ctx.drawImage(this.dualBackVideo, 0, 0, halfWidth, height);
-        }
-        if (this.dualFrontVideo && this.dualFrontVideo.readyState >= 2) {
-          ctx.drawImage(this.dualFrontVideo, halfWidth, 0, halfWidth, height);
-        }
+        if (this.state.captureMode === 'dual') {
+          const halfWidth = width / 2;
+          if (this.dualBackVideo && this.dualBackVideo.readyState >= 2) {
+            ctx.drawImage(this.dualBackVideo, 0, 0, halfWidth, height);
+          }
+          if (this.dualFrontVideo && this.dualFrontVideo.readyState >= 2) {
+            ctx.drawImage(this.dualFrontVideo, halfWidth, 0, halfWidth, height);
+          }
 
-        // Draw camera labels for dual mode
-        ctx.fillStyle = 'white';
-        ctx.font = '16px Arial'; // Smaller font for labels
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'top';
-
-        // Back Camera label (top-right of left half)
-        ctx.fillText('Back Camera', halfWidth - 10, 10);
-
-        // Front Camera label (top-right of right half)
-        ctx.fillText('Front Camera', width - 10, 10);
-
-      } else { // Single camera mode
-        // Ensure video is ready before drawing
-        if (this.singleVideoEl && this.singleVideoEl.readyState >= 2) {
+          ctx.fillStyle = 'white';
+          ctx.font = '16px Arial';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'top';
+          ctx.fillText('Back Camera', halfWidth - 10, 10);
+          ctx.fillText('Front Camera', width - 10, 10);
+        } else if (this.singleVideoEl && this.singleVideoEl.readyState >= 2) {
           ctx.drawImage(this.singleVideoEl, 0, 0, width, height);
         }
-      }
 
-      this._drawHUD(ctx, width, height);
+        this._drawHUD(ctx, width, height);
+      }
 
       this.dualAnimationFrame = requestAnimationFrame(draw);
     };
@@ -648,6 +642,40 @@ class VideoComposer {
     this.isMuted = isMuted;
   }
 
+  pauseCapture() {
+    if (this.mediaRecorder && typeof this.mediaRecorder.pause === 'function' && this.mediaRecorder.state === 'recording') {
+      try {
+        this.mediaRecorder.pause();
+      } catch (error) {
+        console.warn('Failed to pause media recorder:', error);
+      }
+    }
+
+    this.isDrawingPaused = true;
+
+    if (this.audioTrack && this.wasAudioEnabledBeforePause === null) {
+      this.wasAudioEnabledBeforePause = this.audioTrack.enabled;
+      this.audioTrack.enabled = false;
+    }
+  }
+
+  resumeCapture() {
+    if (this.mediaRecorder && typeof this.mediaRecorder.resume === 'function' && this.mediaRecorder.state === 'paused') {
+      try {
+        this.mediaRecorder.resume();
+      } catch (error) {
+        console.warn('Failed to resume media recorder:', error);
+      }
+    }
+
+    this.isDrawingPaused = false;
+
+    if (this.audioTrack && this.wasAudioEnabledBeforePause !== null) {
+      this.audioTrack.enabled = this.wasAudioEnabledBeforePause;
+    }
+    this.wasAudioEnabledBeforePause = null;
+  }
+
   _drawHUD(ctx, width, height) {
     // Draw a semi-transparent black rectangle at the bottom for the HUD background
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
@@ -695,6 +723,7 @@ class VideoComposer {
       ctx.fillText(text, 10, 10);
     }
   }
+
 }
 
 export default VideoComposer;
