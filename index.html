@@ -30,8 +30,10 @@
             Camera</span>
         </div>
       </div>
-      <div id="cameraStatusMessage" class="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 transition-opacity duration-300 ease-out opacity-0">
-        <div class="w-full text-center space-y-3 bg-black/80 border border-white/10 backdrop-blur-md rounded-xl px-6 py-5 shadow-neon">
+      <div id="cameraStatusMessage"
+        class="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 transition-opacity duration-300 ease-out opacity-0">
+        <div
+          class="w-full text-center space-y-3 bg-black/80 border border-white/10 backdrop-blur-md rounded-xl px-6 py-5 shadow-neon">
           <h2 class="text-lg font-heading text-brand" id="cameraStatusTitle">Camera Status</h2>
           <p class="text-sm text-white/80" id="cameraStatusBody">Checking for cameras…</p>
         </div>
@@ -42,7 +44,8 @@
     <div class="absolute inset-0 flex flex-col justify-between p-4 md:p-8">
 
       <!-- Landscape Nudge Banner (hidden by default) -->
-      <div id="landscapeNudge" class="hidden absolute top-4 left-1/2 -translate-x-1/2 w-11/12 max-w-sm z-50 bg-yellow-400 text-black text-sm text-center p-2 rounded-lg shadow-lg flex items-center justify-between gap-2">
+      <div id="landscapeNudge"
+        class="hidden absolute top-4 left-1/2 -translate-x-1/2 w-11/12 max-w-sm z-50 bg-yellow-400 text-black text-sm text-center p-2 rounded-lg shadow-lg flex items-center justify-between gap-2">
         <span>Best in landscape — rotate your phone.</span>
         <button id="dismissNudge" class="text-black/70 hover:text-black font-bold text-lg leading-none">&times;</button>
       </div>
@@ -97,7 +100,8 @@
               <span>Drive Type</span>
               <span id="currentDriveType" class="text-xs uppercase tracking-wide text-white/50"></span>
             </button>
-            <button id="captureSettingsButton" class="settings-item flex items-center justify-between gap-4 border-t border-white/10">
+            <button id="captureSettingsButton"
+              class="settings-item flex items-center justify-between gap-4 border-t border-white/10">
               <span>Capture Mode</span>
               <span id="currentCaptureSetting" class="text-xs uppercase tracking-wide text-white/50"></span>
             </button>
@@ -132,11 +136,19 @@
       <div class="bg-surface p-6 rounded-lg shadow-neon text-brand font-body w-11/12 md:w-1/3">
         <h2 id="settingsModalTitle" class="text-xl font-heading mb-4"></h2>
         <div id="settingsModalContent" class="space-y-3">
-          <button id="btnSingle" class="block w-full text-left p-2 rounded-md hover:bg-brand hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">Single Camera</button>
-          <button id="btnDual" class="block w-full text-left p-2 rounded-md hover:bg-brand hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">Dual Camera</button>
+          <button id="btnSingle"
+            class="block w-full text-left p-2 rounded-md hover:bg-brand hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">Single
+            Camera</button>
+          <button id="btnDual"
+            class="block w-full text-left p-2 rounded-md hover:bg-brand hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">Dual
+            Camera</button>
           <div class="border-t border-white/5 my-3"></div>
-          <button id="btnFacingUser" class="block w-full text-left p-2 rounded-md hover:bg-brand hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">Facing: User</button>
-          <button id="btnFacingEnvironment" class="block w-full text-left p-2 rounded-md hover:bg-brand hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">Facing: Environment</button>
+          <button id="btnFacingUser"
+            class="block w-full text-left p-2 rounded-md hover:bg-brand hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">Facing:
+            User</button>
+          <button id="btnFacingEnvironment"
+            class="block w-full text-left p-2 rounded-md hover:bg-brand hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">Facing:
+            Environment</button>
         </div>
         <button id="settingsModalClose"
           class="mt-6 w-full bg-brand text-black py-2 rounded-md font-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">Close</button>
@@ -144,10 +156,8 @@
     </div>
 
     <!-- Past Trips Overlay (initially hidden) -->
-    <div id="pastTripsOverlay"
-      class="hidden fixed inset-0 bg-surface z-40">
-      <div
-        class="p-6 text-brand font-body w-full h-full overflow-hidden relative flex flex-col">
+    <div id="pastTripsOverlay" class="hidden fixed inset-0 bg-surface z-40">
+      <div class="p-6 text-brand font-body w-full h-full overflow-hidden relative flex flex-col">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-xl font-heading">Past Trips</h2>
           <div class="flex items-center gap-2">
