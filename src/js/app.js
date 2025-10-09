@@ -242,6 +242,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const shareSummaryImageFromPastTrip = async (trip) => {
+    console.log('shareSummaryImageFromPastTrip called with trip:', trip);
     if (!trip || !trip.points || trip.points.length < 2) {
       alert('Trip is too short to generate a summary image.');
       return;
@@ -263,8 +264,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const tempMap = new maplibregl.Map({
-      container: tempMapContainer.id,
-      style: 'https://api.maptiler.com/maps/streets/style.json?key=YOUR_MAPTILER_API_KEY',
+      style: 'https://api.maptiler.com/maps/streets/style.json?key=EPHzQXKE9VY3oRnWNgJC',
       center: coords[0],
       zoom: 12,
       interactive: false,
@@ -285,6 +285,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       tempMap.fitBounds(bounds, { padding: 40, duration: 0 });
 
       tempMap.once('idle', async () => {
+        console.log('tempMap is idle, calling shareSummaryImage...');
         await shareSummaryImage({ map: tempMap, trip });
         // Cleanup
         tempMap.remove();
@@ -389,8 +390,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     const shareMenu = document.createElement('div');
     shareMenu.className = 'share-menu absolute bg-surface/95 border border-brand/30 rounded-lg shadow-neon text-sm text-white backdrop-blur z-[999] overflow-hidden';
     shareMenu.style.top = `${menuRect.bottom + 8}px`; // 8px below the button
-    shareMenu.style.left = `${menuRect.left}px`;
-    shareMenu.style.minWidth = `${menuRect.width}px`; // Match button width or set a min-width
+    shareMenu.style.minWidth = `200px`; // Increased width for better readability
+
+    // Calculate horizontal position to keep it within viewport
+    const viewportWidth = window.innerWidth;
+    const menuWidth = shareMenu.offsetWidth; // Get the actual width of the menu
+    let leftPosition = menuRect.left; // Default: align left with button
+
+    // Check if aligning left with button causes overflow on the right
+    if (leftPosition + menuWidth > viewportWidth - 10) {
+      // If it overflows, try aligning right with button
+      leftPosition = menuRect.right - menuWidth;
+
+      // If aligning right with button causes overflow on the left
+      if (leftPosition < 10) {
+        leftPosition = 10; // Align with left edge of viewport with padding
+      }
+    }
+    shareMenu.style.left = `${leftPosition}px`;
 
     // Add menu items (similar to the old HTML structure)
     const hasVideo = Boolean(trip.videoFilename);
@@ -736,7 +753,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (summaryMap) summaryMap.remove();
     summaryMap = new maplibregl.Map({
       container: 'tripSummaryMap',
-      style: 'https://api.maptiler.com/maps/streets/style.json?key=YOUR_MAPTILER_API_KEY', // Replace with your key
+      style: 'https://api.maptiler.com/maps/streets/style.json?key=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4M29iazA2Z2gycXA4N2xpZm5oZHcifQ.F_s5Wz_EFR4jgDPYqtZpLg', // Replace with your key
       center: coords[0],
       zoom: 12,
       attributionControl: false
@@ -797,6 +814,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // Initialize the share button now that the summary is visible
+    console.log('Calling initShareButton with trip:', trip, 'and summaryMap:', summaryMap);
     initShareButton(trip, summaryMap, getTripVideoBlob);
   };
 

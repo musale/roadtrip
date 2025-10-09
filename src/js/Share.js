@@ -75,13 +75,16 @@ export async function shareVideo(blob, filename) {
  * @param {object} options.trip The trip data object.
  */
 export async function shareSummaryImage({ map, trip }) {
+  console.log('shareSummaryImage called with:', { map, trip });
   if (!map || !trip) {
     alert('Map or trip data is missing.');
+    console.error('Map or trip data is missing.', { map, trip });
     return;
   }
 
   // Ensure map is fully rendered before capture
   if (map.areTilesLoaded() === false) {
+    console.log('Map not idle, waiting...');
     map.once('idle', () => shareSummaryImage({ map, trip }));
     return;
   }
@@ -91,7 +94,7 @@ export async function shareSummaryImage({ map, trip }) {
     map.resize();
   }
 
-
+  console.log('Map is ready, capturing canvas...');
   const mapDataUrl = map.getCanvas().toDataURL('image/png');
   const img = new Image();
   img.src = mapDataUrl;
@@ -114,9 +117,12 @@ export async function shareSummaryImage({ map, trip }) {
   const statsY = mapH + pad + 20;
   ctx.fillStyle = '#E0E0E0';
   ctx.font = 'bold 48px "Orbitron", system-ui, sans-serif';
-  ctx.fillText('Trip Summary', pad, statsY);
+  ctx.fillText(trip.title || 'Trip Summary', pad, statsY);
 
   ctx.fillStyle = '#C0C0C0';
+  ctx.font = '24px "IBM Plex Sans", system-ui, sans-serif';
+  ctx.fillText(new Date(trip.date).toLocaleDateString(), pad, statsY + 40);
+
   ctx.font = '32px "IBM Plex Sans", system-ui, sans-serif';
 
   const s = trip.stats;
@@ -124,14 +130,53 @@ export async function shareSummaryImage({ map, trip }) {
   const avgKph = s.avgKph.toFixed(1);
   const duration = new Date(s.durationMs).toISOString().substr(11, 8);
 
-  ctx.fillText(`${distanceKm} km`, pad, statsY + 70);
-  ctx.fillText(`${avgKph} kph avg`, pad + 250, statsY + 70);
-  ctx.fillText(duration, pad + 550, statsY + 70);
+  ctx.fillText(`${distanceKm} km`, pad, statsY + 90);
+  ctx.fillText(`${avgKph} kph avg`, pad + 250, statsY + 90);
+  ctx.fillText(duration, pad + 550, statsY + 90);
 
   if (trip.driveType) {
     ctx.font = 'italic 28px "IBM Plex Sans", system-ui, sans-serif';
     ctx.fillStyle = '#909090';
-    ctx.fillText(`Drive Type: ${trip.driveType}`, pad, statsY + 120);
+    ctx.fillText(`Drive Type: ${trip.driveType}`, pad, statsY + 140);
+  }
+
+  // --- Draw Elevation Sparkline ---
+  const elevations = trip.points.map(p => p.alt).filter(alt => alt !== null && alt !== undefined);
+  if (elevations.length > 1) {
+    const sparklineX = W - 300 - pad;
+    const sparklineY = statsY + 20;
+    const sparklineW = 300;
+    const sparklineH = 100;
+    const sparklinePadding = 10;
+
+    // Draw sparkline background
+    ctx.fillStyle = '#28282B';
+    ctx.fillRect(sparklineX, sparklineY, sparklineW, sparklineH);
+
+    const minEle = Math.min(...elevations);
+    const maxEle = Math.max(...elevations);
+
+    ctx.strokeStyle = '#00BFFF'; // Deep Sky Blue
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+
+    const getSparklineX = (index) => sparklineX + sparklinePadding + (index / (elevations.length - 1)) * (sparklineW - 2 * sparklinePadding);
+    const getSparklineY = (elevation) => {
+      const normalizedElevation = (elevation - minEle) / (maxEle - minEle);
+      return sparklineY + sparklineH - sparklinePadding - normalizedElevation * (sparklineH - 2 * sparklinePadding);
+    };
+
+    ctx.moveTo(getSparklineX(0), getSparklineY(elevations[0]));
+    elevations.forEach((ele, index) => {
+      ctx.lineTo(getSparklineX(index), getSparklineY(ele));
+    });
+    ctx.stroke();
+
+    // Add min/max elevation text
+    ctx.fillStyle = '#E0E0E0';
+    ctx.font = '18px "IBM Plex Sans", system-ui, sans-serif';
+    ctx.fillText(`Min: ${minEle.toFixed(0)}m`, sparklineX + sparklinePadding, sparklineY + sparklineH - 5);
+    ctx.fillText(`Max: ${maxEle.toFixed(0)}m`, sparklineX + sparklineW - ctx.measureText(`Max: ${maxEle.toFixed(0)}m`).width - sparklinePadding, sparklineY + sparklineH - 5);
   }
 
   // Convert to blob and share
