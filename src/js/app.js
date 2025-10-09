@@ -7,7 +7,7 @@ import LiveHUD from './LiveHUD.js';
 import VideoComposer from './VideoComposer.js';
 import MapView from './MapView.js';
 import { getTrips, writeVideoToOpfs, clearVideoChunks, readVideoFromOpfs, deleteTrip, clearTrips, deleteVideoFromOpfs } from './storage/db.js';
-import { initShareButton, shareVideo, shareSummaryImage, downloadBlob, debounce } from './Share.js';
+import { initShareButton, shareVideo, shareSummaryImage, downloadBlob, debounce, SHARE_MAP_STYLE_URL } from './Share.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const videoContainer = document.getElementById('videoContainer');
@@ -387,56 +387,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const shareSummaryImageFromPastTrip = async (trip) => {
-    console.log('shareSummaryImageFromPastTrip called with trip:', trip);
-    if (!trip || !trip.points || trip.points.length < 2) {
-      alert('Trip is too short to generate a summary image.');
-      return;
-    }
-
-    const tempMapContainer = document.createElement('div');
-    tempMapContainer.id = `temp-map-${trip.id}`;
-    tempMapContainer.style.width = '1200px';
-    tempMapContainer.style.height = '700px';
-    tempMapContainer.style.position = 'absolute';
-    tempMapContainer.style.left = '-9999px'; // Position off-screen
-    tempMapContainer.style.top = '-9999px';
-    document.body.appendChild(tempMapContainer);
-
-    const coords = trip.points.map(p => [p.lon, p.lat]);
-    const geojson = {
-      type: 'Feature',
-      geometry: { type: 'LineString', coordinates: coords },
-    };
-
-    const tempMap = new maplibregl.Map({
-      style: 'https://api.maptiler.com/maps/streets/style.json?key=EPHzQXKE9VY3oRnWNgJC',
-      center: coords[0],
-      zoom: 12,
-      interactive: false,
-      attributionControl: false,
-    });
-
-    tempMap.on('load', () => {
-      tempMap.addSource('route', { type: 'geojson', data: geojson });
-      tempMap.addLayer({
-        id: 'route-line',
-        type: 'line',
-        source: 'route',
-        paint: { 'line-color': '#0ea5e9', 'line-width': 4, 'line-opacity': 0.8 }
-      });
-
-      const bounds = new maplibregl.LngLatBounds();
-      coords.forEach(coord => bounds.extend(coord));
-      tempMap.fitBounds(bounds, { padding: 40, duration: 0 });
-
-      tempMap.once('idle', async () => {
-        console.log('tempMap is idle, calling shareSummaryImage...');
-        await shareSummaryImage({ map: tempMap, trip });
-        // Cleanup
-        tempMap.remove();
-        document.body.removeChild(tempMapContainer);
-      });
-    });
+    if (!trip) return;
+    await shareSummaryImage({ trip });
   };
 
   const renderTrip = (trip) => {
@@ -565,12 +517,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Add menu items (similar to the old HTML structure)
     const hasVideo = Boolean(trip.videoFilename);
-    const hasTrack = Array.isArray(trip.points) && trip.points.length > 0;
 
     shareMenu.innerHTML = `
       <button class="settings-item share-video-option" ${hasVideo ? '' : 'disabled'}>Share Video</button>
       <button class="settings-item download-video-option" ${hasVideo ? '' : 'disabled'}>Download Video</button>
-      <button class="settings-item share-image-option" ${hasTrack ? '' : 'disabled'}>Share Summary Image</button>
+      <button class="settings-item share-image-option">Share Summary Image</button>
     `;
 
     portal.appendChild(shareMenu);
@@ -598,12 +549,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       }, 500));
     }
 
-    if (hasTrack) {
-      shareMenu.querySelector('.share-image-option').addEventListener('click', debounce(() => {
-        closeShareMenuPortal();
-        shareSummaryImageFromPastTrip(trip);
-      }, 500));
-    }
+    shareMenu.querySelector('.share-image-option').addEventListener('click', debounce(() => {
+      closeShareMenuPortal();
+      shareSummaryImageFromPastTrip(trip);
+    }, 500));
 
     // Click outside to close
     const clickOutsideHandler = (e) => {
@@ -924,10 +873,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (summaryMap) summaryMap.remove();
     summaryMap = new maplibregl.Map({
       container: 'tripSummaryMap',
-      style: 'https://api.maptiler.com/maps/streets/style.json?key=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4M29iazA2Z2gycXA4N2xpZm5oZHcifQ.F_s5Wz_EFR4jgDPYqtZpLg', // Replace with your key
+      style: SHARE_MAP_STYLE_URL,
       center: coords[0],
       zoom: 12,
-      attributionControl: false
+      attributionControl: false,
+      preserveDrawingBuffer: true,
+      interactive: false,
+      pitchWithRotate: false,
+      dragPan: false,
+      renderWorldCopies: false,
+      boxZoom: false,
+      doubleClickZoom: false,
+      scrollZoom: false,
+      touchPitch: false,
+      touchZoomRotate: false,
     });
 
     summaryMap.on('load', () => {
