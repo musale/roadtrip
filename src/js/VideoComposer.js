@@ -48,6 +48,15 @@ class VideoComposer {
       distance: '0.0 KM',
       time: '00:00:00',
     };
+
+    this.capabilities = {
+      cameraCount: 0,
+      hasUserFacing: false,
+      hasEnvironmentFacing: false,
+      devices: [],
+    };
+
+    this.lastError = null;
   }
 
   async hasOPFS() {
@@ -68,65 +77,221 @@ class VideoComposer {
     }
   }
 
-  async _getMediaStream(videoConstraints, audioConstraints = false) { // audio is optional
+  async refreshCameraInventory() {
+    const fallback = {
+      cameraCount: 0,
+      hasUserFacing: false,
+      hasEnvironmentFacing: false,
+      devices: [],
+    };
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+      this.capabilities = fallback;
+      return this.capabilities;
+    }
+
     try {
-      return await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: audioConstraints });
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices.filter(device => device.kind === 'videoinput');
+
+      const facingFromLabels = cameras.reduce((acc, device) => {
+        const label = device.label?.toLowerCase() ?? '';
+        if (label.includes('back') || label.includes('rear') || label.includes('environment')) {
+          acc.hasEnvironmentFacing = true;
+        }
+        if (label.includes('front') || label.includes('user') || label.includes('face')) {
+          acc.hasUserFacing = true;
+        }
+        return acc;
+      }, { hasUserFacing: false, hasEnvironmentFacing: false });
+
+      const activeFacings = this._collectActiveFacingModes();
+
+      const hasUserFacing = facingFromLabels.hasUserFacing || activeFacings.has('user') || (cameras.length === 1);
+      const hasEnvironmentFacing = facingFromLabels.hasEnvironmentFacing || activeFacings.has('environment') || (cameras.length > 1);
+
+      this.capabilities = {
+        cameraCount: cameras.length,
+        hasUserFacing,
+        hasEnvironmentFacing,
+        devices: cameras,
+      };
+    } catch (error) {
+      console.warn('Failed to enumerate camera devices:', error);
+      this.capabilities = fallback;
+    }
+
+    return this.capabilities;
+  }
+
+  getCapabilities() {
+    return this.capabilities;
+  }
+
+  _collectActiveFacingModes() {
+    const facingModes = new Set();
+    const tracks = [];
+
+    if (this.state.backStream) {
+      tracks.push(...this.state.backStream.getVideoTracks());
+    }
+    if (this.state.frontStream) {
+      tracks.push(...this.state.frontStream.getVideoTracks());
+    }
+
+    tracks.forEach((track) => {
+      const facing = track.getSettings?.().facingMode;
+      if (facing) facingModes.add(facing);
+    });
+
+    return facingModes;
+  }
+
+  async _getMediaStream(videoConstraints, audioConstraints = false) { // audio is optional
+    const constraints = { video: videoConstraints, audio: audioConstraints };
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      return { stream, error: null };
     } catch (error) {
       console.error('Error getting media stream with constraints:', videoConstraints, error);
-      return null;
+      return { stream: null, error };
     }
   }
 
-  async setCaptureMode(mode) {
-    if (this.state.captureMode === mode) return;
-    this.state.captureMode = mode;
-    await this.stopStreams();
-    if (mode === 'single') {
-      await this.startSingle();
-    } else {
-      await this.startDual();
+  _hasActiveStreamForMode(mode) {
+    const trackIsLive = (track) => track && track.readyState === 'live';
+
+    if (mode === 'dual') {
+      const backLive = this.state.backStream?.getVideoTracks().some(trackIsLive) ?? false;
+      const frontLive = this.state.frontStream?.getVideoTracks().some(trackIsLive) ?? false;
+      return backLive && frontLive;
     }
+
+    return this.state.backStream?.getVideoTracks().some(trackIsLive) ?? false;
+  }
+
+  async setCaptureMode(mode, options = {}) {
+    const { forceRestart = false } = options;
+    if (!['single', 'dual'].includes(mode)) {
+      const error = { code: 'invalid-mode', message: `Unsupported capture mode: ${mode}` };
+      this.lastError = error;
+      return { success: false, error };
+    }
+
+    const shouldRestart = forceRestart || this.state.captureMode !== mode || !this._hasActiveStreamForMode(mode);
+
+    this.state.captureMode = mode;
+
+    if (!shouldRestart) {
+      const capabilities = await this.refreshCameraInventory();
+      return { success: true, capabilities };
+    }
+
+    await this.stopStreams();
+
+    const startResult = mode === 'single'
+      ? await this.startSingle()
+      : await this.startDual();
+
+    if (!startResult.success) {
+      this.lastError = startResult.error ?? null;
+      return startResult;
+    }
+
+    const capabilities = await this.refreshCameraInventory();
+    return { success: true, capabilities, metadata: startResult.metadata };
+  }
+
+  async ensureActiveCapture() {
+    if (this._hasActiveStreamForMode(this.state.captureMode)) {
+      const capabilities = await this.refreshCameraInventory();
+      return { success: true, capabilities };
+    }
+    return this.setCaptureMode(this.state.captureMode, { forceRestart: true });
   }
 
   async setFacing(facing) {
-    if (this.state.facing === facing) return;
-    this.state.facing = facing;
-    if (this.state.captureMode === 'single') {
-      await this.stopStreams();
-      await this.startSingle();
+    if (!['user', 'environment'].includes(facing)) {
+      const error = { code: 'invalid-facing', message: `Unsupported facing: ${facing}` };
+      this.lastError = error;
+      return { success: false, error };
     }
+
+    const capabilities = await this.refreshCameraInventory();
+    if (facing === 'environment' && !capabilities.hasEnvironmentFacing) {
+      const error = {
+        code: 'environment-unavailable',
+        message: 'No rear camera detected on this device.',
+      };
+      this.lastError = error;
+      return { success: false, error, capabilities };
+    }
+
+    this.state.facing = facing;
+
+    if (this.state.captureMode === 'single') {
+      return this.setCaptureMode('single', { forceRestart: true });
+    }
+
+    return { success: true, capabilities };
   }
 
   async startSingle() {
     const baseConstraints = { width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } };
-    const videoConstraints = { facingMode: { ideal: this.state.facing }, ...baseConstraints };
+    const attempts = [];
+    const preferredFacing = this.state.facing;
+
+    const tryConstraints = [
+      { label: preferredFacing ? `facing-${preferredFacing}` : 'preferred', constraints: { facingMode: { ideal: preferredFacing }, ...baseConstraints } },
+      { label: 'default', constraints: baseConstraints },
+    ];
 
     let stream = null;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: true });
-    } catch (error) {
-      console.error('Failed to get single camera stream:', error);
-      return false;
+    for (const attempt of tryConstraints) {
+      if (!attempt.constraints.facingMode?.ideal) {
+        delete attempt.constraints.facingMode;
+      }
+
+      const { stream: attemptStream, error } = await this._getMediaStream(attempt.constraints, { echoCancellation: true, noiseSuppression: true });
+      if (attemptStream) {
+        stream = attemptStream;
+        break;
+      }
+      attempts.push({ attempt: attempt.label, error });
     }
 
     if (!stream) {
-      console.error('No stream acquired for single mode.');
-      return false;
+      const error = {
+        code: 'single-stream-failed',
+        message: attempts.length
+          ? `Could not access the ${preferredFacing ?? 'default'} camera. Last error: ${attempts.at(-1)?.error?.message ?? 'Unknown error.'}`
+          : 'Could not access any camera stream.',
+        details: attempts,
+      };
+      return { success: false, error };
     }
 
-    this.state.backStream = stream; // Use backStream for single camera
+    this.state.backStream = stream;
     this.state.frontStream = null;
     this.audioTrack = stream.getAudioTracks()[0] ?? null;
+
+    const videoTrack = stream.getVideoTracks()[0] ?? null;
+    const actualFacing = videoTrack?.getSettings?.().facingMode ?? null;
+    const facingChanged = actualFacing && this.state.facing !== actualFacing;
+    if (facingChanged) {
+      this.state.facing = actualFacing;
+    }
 
     this._setDisplayMode('single');
     this.singleVideoEl.srcObject = stream;
     await this._playVideo(this.singleVideoEl);
-    this._applyMirror(this.singleVideoEl, false); // Do not apply mirror for single camera, let browser handle default mirroring
+    this._applyMirror(this.singleVideoEl, actualFacing === 'user');
 
     this._startCompositeDrawing();
     this._startFpsCheck();
     this._startFrameCounter();
-    return true;
+
+    return { success: true, metadata: { actualFacing: this.state.facing, facingChanged } };
   }
 
   async startDual() {
@@ -134,14 +299,24 @@ class VideoComposer {
     const backVideoConstraints = { facingMode: { ideal: 'environment' }, ...baseConstraints };
     const frontVideoConstraints = { facingMode: { ideal: 'user' }, ...baseConstraints };
 
-    let backStream = await this._getMediaStream(backVideoConstraints, { echoCancellation: true, noiseSuppression: true });
-    let frontStream = await this._getMediaStream(frontVideoConstraints, false); // No audio for front
+    const backResult = await this._getMediaStream(backVideoConstraints, { echoCancellation: true, noiseSuppression: true });
+    const frontResult = await this._getMediaStream(frontVideoConstraints, false);
+
+    let backStream = backResult.stream;
+    let frontStream = frontResult.stream;
 
     // Fallback logic: if both fail, or one fails and cannot be cloned, revert to single
     if (!backStream && !frontStream) {
       console.warn('Dual camera unavailable. Falling back to single camera.');
-      this.state.captureMode = 'single'; // Update state for fallback
-      return this.startSingle();
+      this.state.captureMode = 'single';
+      const singleResult = await this.startSingle();
+      if (singleResult.success) {
+        singleResult.metadata = {
+          ...(singleResult.metadata ?? {}),
+          downgradedToSingle: true,
+        };
+      }
+      return singleResult;
     }
 
     // Attempt to clone if one stream fails
@@ -150,7 +325,6 @@ class VideoComposer {
       const clonedTrack = frontStream.getVideoTracks()[0]?.clone();
       if (clonedTrack) {
         backStream = new MediaStream([clonedTrack]);
-        // If frontStream has audio, use it for backStream's audio
         const frontAudioTrack = frontStream.getAudioTracks()[0];
         if (frontAudioTrack) backStream.addTrack(frontAudioTrack.clone());
       }
@@ -161,14 +335,27 @@ class VideoComposer {
     }
 
     if (!backStream || !frontStream) {
-      console.error('Could not establish dual streams, even with cloning. Falling back to single.');
-      this.state.captureMode = 'single'; // Update state for fallback
-      return this.startSingle();
+      const downgradeNotice = {
+        code: 'dual-stream-failed',
+        message: 'Could not establish both camera streams for dual mode. Switched back to single camera.',
+        details: { backError: backResult.error, frontError: frontResult.error },
+      };
+      this.state.captureMode = 'single';
+      const singleResult = await this.startSingle();
+      if (singleResult.success) {
+        singleResult.metadata = {
+          ...(singleResult.metadata ?? {}),
+          downgradedToSingle: true,
+        };
+        singleResult.warning = downgradeNotice;
+        return singleResult;
+      }
+      return { success: false, error: downgradeNotice };
     }
 
     this.state.backStream = backStream;
     this.state.frontStream = frontStream;
-    this.audioTrack = backStream.getAudioTracks()[0] ?? null; // Prefer audio from back camera
+    this.audioTrack = backStream.getAudioTracks()[0] ?? null;
 
     this._setDisplayMode('dual');
     this.dualBackVideo.srcObject = backStream;
@@ -185,7 +372,13 @@ class VideoComposer {
     this._startCompositeDrawing();
     this._startFpsCheck();
     this._startFrameCounter();
-    return true;
+
+    const metadata = {
+      backFacing: backStream.getVideoTracks()[0]?.getSettings?.().facingMode ?? null,
+      frontFacing: frontStream.getVideoTracks()[0]?.getSettings?.().facingMode ?? null,
+    };
+
+    return { success: true, metadata };
   }
 
   async stopStreams() {
