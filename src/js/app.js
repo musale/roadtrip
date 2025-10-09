@@ -318,15 +318,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         <button class="trip-action export-gpx" ${hasTrack ? '' : 'disabled'}>GPX</button>
         <button class="trip-action export-geojson" ${hasTrack ? '' : 'disabled'}>GeoJSON</button>
 
-        <!-- Share Button & Menu -->
-        <div class="relative">
-          <button class="trip-action share-button">Share</button>
-          <div class="share-menu hidden absolute right-0 top-full mt-2 w-48 bg-surface/95 border border-brand/30 rounded-lg shadow-neon text-sm text-white backdrop-blur z-20 overflow-hidden">
-            <button class="settings-item share-video-option" ${hasVideo ? '' : 'disabled'}>Share Video</button>
-            <button class="settings-item download-video-option" ${hasVideo ? '' : 'disabled'}>Download Video</button>
-            <button class="settings-item share-image-option" ${hasTrack ? '' : 'disabled'}>Share Summary Image</button>
-          </div>
-        </div>
+        <!-- Share Button -->
+        <button class="trip-action share-button">Share</button>
       </div>
     `;
 
@@ -334,15 +327,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Event Listeners for the new element ---
     const shareButton = li.querySelector('.share-button');
-    const shareMenu = li.querySelector('.share-menu');
 
     shareButton.addEventListener('click', (e) => {
       e.stopPropagation();
-      // Close other menus
-      document.querySelectorAll('.share-menu').forEach(menu => {
-        if (menu !== shareMenu) menu.classList.add('hidden');
-      });
-      shareMenu.classList.toggle('hidden');
+      openShareMenuPortal(trip, shareButton);
     });
 
     li.querySelector('.delete-trip').addEventListener('click', () => handleDeleteTrip(trip));
@@ -359,34 +347,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           alert('Could not retrieve video.');
         }
       });
-
-      li.querySelector('.share-video-option').addEventListener('click', debounce(async () => {
-        shareMenu.classList.add('hidden');
-        const videoBlob = await getTripVideoBlob(trip);
-        if (videoBlob) {
-          shareVideo(videoBlob, trip.videoFilename);
-        } else {
-          alert('Could not retrieve video file.');
-        }
-      }, 500));
-
-      li.querySelector('.download-video-option').addEventListener('click', debounce(async () => {
-        shareMenu.classList.add('hidden');
-        const videoBlob = await getTripVideoBlob(trip);
-        if (videoBlob) {
-          downloadBlob(videoBlob, trip.videoFilename);
-        } else {
-          alert('Could not retrieve video file.');
-        }
-      }, 500));
     }
 
     if (hasTrack) {
-      li.querySelector('.share-image-option').addEventListener('click', debounce(() => {
-        shareMenu.classList.add('hidden');
-        shareSummaryImageFromPastTrip(trip);
-      }, 500));
-
       li.querySelector('.export-gpx').addEventListener('click', () => {
         const blob = tripRecorder.exportGPX(trip);
         if (blob) downloadBlob(blob, `roadtrip-${trip.id}.gpx`);
@@ -414,6 +377,86 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const hidePastTripsOverlay = () => {
     pastTripsOverlay.classList.add('hidden');
+  };
+
+  const openShareMenuPortal = (trip, shareButtonElement) => {
+    const portal = document.getElementById('shareMenuPortal');
+    portal.innerHTML = ''; // Clear previous menu if any
+    portal.classList.remove('pointer-events-none'); // Enable interactions
+
+    const menuRect = shareButtonElement.getBoundingClientRect();
+
+    const shareMenu = document.createElement('div');
+    shareMenu.className = 'share-menu absolute bg-surface/95 border border-brand/30 rounded-lg shadow-neon text-sm text-white backdrop-blur z-[999] overflow-hidden';
+    shareMenu.style.top = `${menuRect.bottom + 8}px`; // 8px below the button
+    shareMenu.style.left = `${menuRect.left}px`;
+    shareMenu.style.minWidth = `${menuRect.width}px`; // Match button width or set a min-width
+
+    // Add menu items (similar to the old HTML structure)
+    const hasVideo = Boolean(trip.videoFilename);
+    const hasTrack = Array.isArray(trip.points) && trip.points.length > 0;
+
+    shareMenu.innerHTML = `
+      <button class="settings-item share-video-option" ${hasVideo ? '' : 'disabled'}>Share Video</button>
+      <button class="settings-item download-video-option" ${hasVideo ? '' : 'disabled'}>Download Video</button>
+      <button class="settings-item share-image-option" ${hasTrack ? '' : 'disabled'}>Share Summary Image</button>
+    `;
+
+    portal.appendChild(shareMenu);
+
+    // Event listeners for menu items
+    if (hasVideo) {
+      shareMenu.querySelector('.share-video-option').addEventListener('click', debounce(async () => {
+        closeShareMenuPortal();
+        const videoBlob = await getTripVideoBlob(trip);
+        if (videoBlob) {
+          shareVideo(videoBlob, trip.videoFilename);
+        } else {
+          alert('Could not retrieve video file.');
+        }
+      }, 500));
+
+      shareMenu.querySelector('.download-video-option').addEventListener('click', debounce(async () => {
+        closeShareMenuPortal();
+        const videoBlob = await getTripVideoBlob(trip);
+        if (videoBlob) {
+          downloadBlob(videoBlob, trip.videoFilename);
+        } else {
+          alert('Could not retrieve video file.');
+        }
+      }, 500));
+    }
+
+    if (hasTrack) {
+      shareMenu.querySelector('.share-image-option').addEventListener('click', debounce(() => {
+        closeShareMenuPortal();
+        shareSummaryImageFromPastTrip(trip);
+      }, 500));
+    }
+
+    // Click outside to close
+    const clickOutsideHandler = (e) => {
+      if (!shareMenu.contains(e.target) && e.target !== shareButtonElement) {
+        closeShareMenuPortal();
+      }
+    };
+    document.addEventListener('click', clickOutsideHandler);
+
+    // Escape key to close
+    const escapeHandler = (e) => {
+      if (e.key === 'Escape') {
+        closeShareMenuPortal();
+      }
+    };
+    document.addEventListener('keydown', escapeHandler);
+
+    // Function to close the portal
+    const closeShareMenuPortal = () => {
+      portal.innerHTML = '';
+      portal.classList.add('pointer-events-none');
+      document.removeEventListener('click', clickOutsideHandler);
+      document.removeEventListener('keydown', escapeHandler);
+    };
   };
 
   async function handleDeleteTrip(trip) {
@@ -789,15 +832,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.addEventListener('click', (e) => {
     settingsMenu.classList.add('hidden');
-    // Close any open share menus in the trip list
-    const openMenus = document.querySelectorAll('.share-menu:not(.hidden)');
-    openMenus.forEach(menu => {
-      // Check if the click was outside the menu and its corresponding button
-      const shareButton = menu.previousElementSibling;
-      if (!menu.contains(e.target) && e.target !== shareButton) {
-        menu.classList.add('hidden');
-      }
-    });
+    // The share menu is now handled by its own click-outside logic in openShareMenuPortal
   });
 
   settingsModalClose.addEventListener('click', hideModal);
