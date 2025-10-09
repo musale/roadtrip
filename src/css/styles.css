@@ -58,7 +58,7 @@ h1, h2, h3, h4, h5, h6 {
   @apply bg-white/10 text-white/40 cursor-not-allowed;
 }
 
-.share-toast-container {
+.toast-container {
   position: fixed;
   top: 1.5rem;
   left: 50%;
@@ -70,7 +70,7 @@ h1, h2, h3, h4, h5, h6 {
   pointer-events: none;
 }
 
-.share-toast {
+.toast {
   pointer-events: auto;
   background: rgba(13, 13, 15, 0.92);
   color: var(--color-text-primary);
@@ -86,17 +86,17 @@ h1, h2, h3, h4, h5, h6 {
   backdrop-filter: blur(4px);
 }
 
-.share-toast[data-variant="success"] {
+.toast[data-variant="success"] {
   border-color: rgba(34, 197, 94, 0.35);
   box-shadow: 0 0 15px rgba(34, 197, 94, 0.25), var(--shadow-neon);
 }
 
-.share-toast[data-variant="error"] {
+.toast[data-variant="error"] {
   border-color: rgba(248, 113, 113, 0.35);
   box-shadow: 0 0 15px rgba(248, 113, 113, 0.25), var(--shadow-neon);
 }
 
-.share-toast.visible {
+.toast.visible {
   opacity: 1;
   transform: translateY(0);
 }
