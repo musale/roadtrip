@@ -59,6 +59,8 @@ class VideoComposer {
     };
 
     this.lastError = null;
+    this._labelBootstrapPromise = null;
+    this._deviceLabelsPrimed = false;
   }
 
   async hasOPFS() {
@@ -147,6 +149,88 @@ class VideoComposer {
     });
 
     return facingModes;
+  }
+
+  async _ensureDeviceLabels() {
+    if (this._deviceLabelsPrimed) return;
+    if (!navigator?.mediaDevices?.getUserMedia) return;
+
+    if (!this._labelBootstrapPromise) {
+      this._labelBootstrapPromise = (async () => {
+        let bootstrapStream = null;
+        try {
+          bootstrapStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          this._deviceLabelsPrimed = true;
+        } catch (error) {
+          console.warn('Unable to prime device labels via getUserMedia:', error);
+          throw error;
+        } finally {
+          if (bootstrapStream) {
+            bootstrapStream.getTracks().forEach(track => track.stop());
+          }
+        }
+      })().finally(() => {
+        this._labelBootstrapPromise = null;
+      });
+    }
+
+    try {
+      await this._labelBootstrapPromise;
+    } catch {
+      // Proceed even if priming fails; facingMode fallbacks will be used.
+    }
+  }
+
+  async _pickCameraDevices() {
+    if (!navigator?.mediaDevices?.enumerateDevices) {
+      return { devices: [], back: null, front: null };
+    }
+
+    let devices = [];
+    try {
+      devices = (await navigator.mediaDevices.enumerateDevices())
+        .filter(device => device.kind === 'videoinput');
+    } catch (error) {
+      console.warn('Failed to enumerate camera devices:', error);
+      return { devices: [], back: null, front: null };
+    }
+
+    if (devices.length === 0) {
+      return { devices, back: null, front: null };
+    }
+
+    const keywords = {
+      back: ['back', 'rear', 'environment', 'world', 'outside'],
+      front: ['front', 'user', 'face', 'self', 'selfie', 'inward', 'inside'],
+    };
+
+    const matchesKeywords = (device, list) => {
+      const label = device.label?.toLowerCase() ?? '';
+      const group = device.groupId?.toLowerCase() ?? '';
+      return list.some(keyword => label.includes(keyword) || (group && group.includes(keyword)));
+    };
+
+    const pickPreferred = (pool, list, excludeId = null) => {
+      return pool.find(device => device.deviceId !== excludeId && matchesKeywords(device, list)) ?? null;
+    };
+
+    let back = pickPreferred(devices, keywords.back);
+    if (!back) {
+      back = devices[0] ?? null;
+    }
+
+    const remaining = devices.filter(device => device.deviceId !== back?.deviceId);
+    let front = pickPreferred(remaining, keywords.front);
+    if (!front) {
+      front = remaining[0] ?? null;
+    }
+
+    // If no distinct remaining device, attempt to find any other distinct entry
+    if (!front) {
+      front = devices.find(device => device.deviceId !== back?.deviceId) ?? null;
+    }
+
+    return { devices, back, front };
   }
 
   async _getMediaStream(videoConstraints, audioConstraints = false) { // audio is optional
@@ -297,50 +381,23 @@ class VideoComposer {
   }
 
   async startDual() {
-    const baseConstraints = { width: { ideal: VIDEO_WIDTH }, height: { ideal: VIDEO_HEIGHT } };
-    const backVideoConstraints = { facingMode: { ideal: 'environment' }, ...baseConstraints };
-    const frontVideoConstraints = { facingMode: { ideal: 'user' }, ...baseConstraints };
+    const baseConstraints = {
+      width: { ideal: VIDEO_WIDTH },
+      height: { ideal: VIDEO_HEIGHT },
+      frameRate: { ideal: FRAME_RATE },
+    };
 
-    const backResult = await this._getMediaStream(backVideoConstraints, { echoCancellation: true, noiseSuppression: true });
-    const frontResult = await this._getMediaStream(frontVideoConstraints, false);
+    await this._ensureDeviceLabels();
+    const { devices, back, front } = await this._pickCameraDevices();
 
-    let backStream = backResult.stream;
-    let frontStream = frontResult.stream;
-
-    // Fallback logic: if both fail, or one fails and cannot be cloned, revert to single
-    if (!backStream && !frontStream) {
-      console.warn('Dual camera unavailable. Falling back to single camera.');
-      this.state.captureMode = 'single';
-      const singleResult = await this.startSingle();
-      if (singleResult.success) {
-        singleResult.metadata = {
-          ...(singleResult.metadata ?? {}),
-          downgradedToSingle: true,
-        };
-      }
-      return singleResult;
-    }
-
-    // Attempt to clone if one stream fails
-    if (!backStream && frontStream) {
-      console.warn('Back camera stream failed, attempting to clone front stream.');
-      const clonedTrack = frontStream.getVideoTracks()[0]?.clone();
-      if (clonedTrack) {
-        backStream = new MediaStream([clonedTrack]);
-        const frontAudioTrack = frontStream.getAudioTracks()[0];
-        if (frontAudioTrack) backStream.addTrack(frontAudioTrack.clone());
-      }
-    } else if (!frontStream && backStream) {
-      console.warn('Front camera stream failed, attempting to clone back stream.');
-      const clonedTrack = backStream.getVideoTracks()[0]?.clone();
-      if (clonedTrack) frontStream = new MediaStream([clonedTrack]);
-    }
-
-    if (!backStream || !frontStream) {
-      const downgradeNotice = {
-        code: 'dual-stream-failed',
-        message: 'Could not establish both camera streams for dual mode. Switched back to single camera.',
-        details: { backError: backResult.error, frontError: frontResult.error },
+    const noDistinctCameras = !back || !front || back.deviceId === front.deviceId;
+    if (noDistinctCameras) {
+      const warning = {
+        code: 'dual-camera-unavailable',
+        message: devices.length > 1
+          ? 'Could not identify separate front and back cameras. Using single camera preview instead.'
+          : 'Dual mode needs both front and rear cameras, but only one camera is available on this device.',
+        details: { deviceCount: devices.length },
       };
       this.state.captureMode = 'single';
       const singleResult = await this.startSingle();
@@ -349,10 +406,80 @@ class VideoComposer {
           ...(singleResult.metadata ?? {}),
           downgradedToSingle: true,
         };
-        singleResult.warning = downgradeNotice;
+        singleResult.warning = warning;
+      }
+      return singleResult;
+    }
+
+    const attempts = { back: [], front: [] };
+
+    const buildConstraints = (overrides) => ({ ...baseConstraints, ...overrides });
+
+    const tryGetStream = async (videoConstraints, audioConstraints, attemptStore, attemptLabel) => {
+      const result = await this._getMediaStream(videoConstraints, audioConstraints);
+      if (!result.stream && result.error) {
+        attemptStore.push({ attempt: attemptLabel, error: result.error });
+      }
+      return result.stream;
+    };
+
+    let backStream = await tryGetStream(
+      buildConstraints({ deviceId: { exact: back.deviceId } }),
+      { echoCancellation: true, noiseSuppression: true },
+      attempts.back,
+      'deviceId'
+    );
+
+    if (!backStream) {
+      backStream = await tryGetStream(
+        buildConstraints({ facingMode: { ideal: 'environment' } }),
+        { echoCancellation: true, noiseSuppression: true },
+        attempts.back,
+        'facingMode'
+      );
+    }
+
+    let frontStream = await tryGetStream(
+      buildConstraints({ deviceId: { exact: front.deviceId } }),
+      false,
+      attempts.front,
+      'deviceId'
+    );
+
+    if (!frontStream) {
+      frontStream = await tryGetStream(
+        buildConstraints({ facingMode: { ideal: 'user' } }),
+        false,
+        attempts.front,
+        'facingMode'
+      );
+    }
+
+    if (!backStream || !frontStream) {
+      backStream?.getTracks().forEach(track => track.stop());
+      frontStream?.getTracks().forEach(track => track.stop());
+
+      const warning = {
+        code: 'dual-stream-failed',
+        message: 'Could not start distinct front and rear camera streams. Reverting to single camera.',
+        details: {
+          attempts,
+          selectedBack: { deviceId: back.deviceId, label: back.label },
+          selectedFront: { deviceId: front.deviceId, label: front.label },
+        },
+      };
+
+      this.state.captureMode = 'single';
+      const singleResult = await this.startSingle();
+      if (singleResult.success) {
+        singleResult.metadata = {
+          ...(singleResult.metadata ?? {}),
+          downgradedToSingle: true,
+        };
+        singleResult.warning = warning;
         return singleResult;
       }
-      return { success: false, error: downgradeNotice };
+      return { success: false, error: warning };
     }
 
     this.state.backStream = backStream;
@@ -368,16 +495,29 @@ class VideoComposer {
       this._playVideo(this.dualFrontVideo),
     ]);
 
-    this._applyMirror(this.dualFrontVideo, true);
-    this._applyMirror(this.dualBackVideo, false);
+    const backFacing = backStream.getVideoTracks()[0]?.getSettings?.().facingMode ?? null;
+    const frontFacing = frontStream.getVideoTracks()[0]?.getSettings?.().facingMode ?? null;
+    const mirrorByFacing = (facingMode) => (
+      typeof facingMode === 'string' && /user|front|face/i.test(facingMode)
+    );
+
+    const frontShouldMirror = mirrorByFacing(frontFacing) || !frontFacing;
+    const backShouldMirror = mirrorByFacing(backFacing) && !!backFacing;
+
+    this._applyMirror(this.dualFrontVideo, frontShouldMirror);
+    this._applyMirror(this.dualBackVideo, backShouldMirror);
 
     this._startCompositeDrawing();
     this._startFpsCheck();
     this._startFrameCounter();
 
     const metadata = {
-      backFacing: backStream.getVideoTracks()[0]?.getSettings?.().facingMode ?? null,
-      frontFacing: frontStream.getVideoTracks()[0]?.getSettings?.().facingMode ?? null,
+      backFacing,
+      frontFacing,
+      backDeviceId: back.deviceId,
+      frontDeviceId: front.deviceId,
+      backLabel: back.label,
+      frontLabel: front.label,
     };
 
     return { success: true, metadata };
