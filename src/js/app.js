@@ -423,6 +423,207 @@ document.addEventListener('DOMContentLoaded', async () => {
     settingsModal.classList.add('hidden');
   };
 
+  const showDualCameraSelector = async () => {
+    const capabilities = await videoComposer.refreshCameraInventory();
+    const devices = capabilities?.devices ?? [];
+
+    if (!Array.isArray(devices) || devices.length < 2) {
+      showNotification('Dual mode needs both a front and rear camera.', { variant: 'warning' });
+      showCameraStatus('Dual mode unavailable', 'We need both front and rear cameras to enable dual capture.', { variant: 'warning', autoHideMs: 6000 });
+      return false;
+    }
+
+    let candidates;
+    try {
+      candidates = await videoComposer.getDualDeviceCandidates();
+    } catch (error) {
+      console.error('Unable to prepare dual camera candidates:', error);
+      showNotification('Could not inspect available cameras. Try again.', { variant: 'error' });
+      return false;
+    }
+
+    const suggestedBack = candidates?.back ?? null;
+    const suggestedFront = candidates?.front ?? null;
+    const preferred = videoComposer.getDualPreferences?.() ?? {};
+
+    const defaultBackId = preferred.backDeviceId ?? suggestedBack?.deviceId ?? devices[0].deviceId;
+    const defaultFrontId = preferred.frontDeviceId
+      ?? suggestedFront?.deviceId
+      ?? devices.find(device => device.deviceId !== defaultBackId)?.deviceId
+      ?? devices[0].deviceId;
+
+    settingsModalTitle.textContent = 'Select Dual Cameras';
+    settingsModalContent.innerHTML = '';
+
+    const instructions = document.createElement('p');
+    instructions.className = 'text-sm text-white/80 mb-4';
+    instructions.textContent = 'Choose which physical cameras feed the rear and front views. Dual recording will restart using your selections.';
+    settingsModalContent.appendChild(instructions);
+
+    const form = document.createElement('form');
+    form.className = 'space-y-6';
+    settingsModalContent.appendChild(form);
+
+    const selectionState = {
+      back: defaultBackId,
+      front: defaultFrontId,
+    };
+
+    const facingDescription = (device) => {
+      const label = device.label?.toLowerCase() ?? '';
+      if (!label) return '';
+      if (/(front|user|self|face|inward)/.test(label)) {
+        return 'Likely front-facing';
+      }
+      if (/(back|rear|environment|world|outside)/.test(label)) {
+        return 'Likely rear-facing';
+      }
+      return '';
+    };
+
+    const buildFieldset = (name, legendText, description) => {
+      const fieldset = document.createElement('fieldset');
+      fieldset.className = 'space-y-2';
+
+      const legend = document.createElement('legend');
+      legend.className = 'text-sm font-medium text-white';
+      legend.textContent = legendText;
+      fieldset.appendChild(legend);
+
+      if (description) {
+        const desc = document.createElement('p');
+        desc.className = 'text-xs text-white/60';
+        desc.textContent = description;
+        fieldset.appendChild(desc);
+      }
+
+      devices.forEach((device, index) => {
+        const optionId = `${name}-${index}`;
+        const wrapper = document.createElement('label');
+        wrapper.className = 'flex items-center gap-3 rounded-md border border-white/10 px-3 py-2 cursor-pointer transition hover:border-brand focus-within:border-brand';
+
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.name = name;
+        input.value = device.deviceId;
+        input.id = optionId;
+        input.className = 'h-4 w-4 text-brand focus:ring-brand';
+        if (name === 'backCamera' && device.deviceId === selectionState.back) {
+          input.checked = true;
+        }
+        if (name === 'frontCamera' && device.deviceId === selectionState.front) {
+          input.checked = true;
+        }
+
+        input.addEventListener('change', () => {
+          if (name === 'backCamera') {
+            selectionState.back = input.value;
+          } else {
+            selectionState.front = input.value;
+          }
+          validateSelections();
+        });
+
+        const textContainer = document.createElement('div');
+        textContainer.className = 'flex flex-col';
+
+        const primaryLabel = document.createElement('span');
+        primaryLabel.className = 'text-sm text-white';
+        primaryLabel.textContent = device.label || `Camera ${index + 1}`;
+        textContainer.appendChild(primaryLabel);
+
+        const facingHint = facingDescription(device);
+        if (facingHint) {
+          const secondary = document.createElement('span');
+          secondary.className = 'text-xs text-white/60';
+          secondary.textContent = facingHint;
+          textContainer.appendChild(secondary);
+        }
+
+        wrapper.appendChild(input);
+        wrapper.appendChild(textContainer);
+        fieldset.appendChild(wrapper);
+      });
+
+      return fieldset;
+    };
+
+    const backFieldset = buildFieldset('backCamera', 'Back camera (rear view)', 'Pick the camera pointed at the road.');
+    const frontFieldset = buildFieldset('frontCamera', 'Front camera (self view)', 'Pick the camera facing you.');
+
+    form.appendChild(backFieldset);
+    form.appendChild(frontFieldset);
+
+    const validationMessage = document.createElement('p');
+    validationMessage.className = 'text-sm text-red-300 hidden';
+    validationMessage.textContent = 'Choose two different cameras for front and back.';
+    form.appendChild(validationMessage);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center justify-end gap-3 pt-2';
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'px-4 py-2 rounded-md border border-white/20 text-white/80 hover:text-white hover:border-white/40 transition';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', hideModal);
+
+    const submitButton = document.createElement('button');
+    submitButton.type = 'submit';
+    submitButton.className = 'px-4 py-2 rounded-md bg-brand text-black font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition';
+    submitButton.textContent = 'Set cameras';
+
+    actions.appendChild(cancelButton);
+    actions.appendChild(submitButton);
+    form.appendChild(actions);
+
+    const validateSelections = () => {
+      const hasBack = !!selectionState.back;
+      const hasFront = !!selectionState.front;
+      const distinct = selectionState.back !== selectionState.front;
+      const valid = hasBack && hasFront && distinct;
+      submitButton.disabled = !valid;
+      validationMessage.classList.toggle('hidden', valid);
+      return valid;
+    };
+
+    validateSelections();
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!validateSelections()) {
+        return;
+      }
+
+      submitButton.disabled = true;
+      submitButton.textContent = 'Setting…';
+
+      try {
+        videoComposer.setDualPreferences({
+          backDeviceId: selectionState.back,
+          frontDeviceId: selectionState.front,
+        });
+        const result = await videoComposer.setCaptureMode('dual', { forceRestart: true });
+        handleCameraResult(result);
+        if (result.success) {
+          updateUI();
+          hideModal();
+        } else {
+          submitButton.disabled = false;
+          submitButton.textContent = 'Set cameras';
+        }
+      } catch (error) {
+        console.error('Failed to set dual cameras:', error);
+        showNotification('Could not switch to dual cameras. Please try again.', { variant: 'error' });
+        submitButton.disabled = false;
+        submitButton.textContent = 'Set cameras';
+      }
+    });
+
+    settingsModal.classList.remove('hidden');
+    return true;
+  };
+
   // Past Trips Functions
   const formatDuration = (durationMs = 0) => {
     if (!durationMs || Number.isNaN(durationMs)) {
@@ -1333,9 +1534,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       ],
       videoComposer.state.captureMode,
       async (selection) => {
-        const result = await videoComposer.setCaptureMode(selection, { forceRestart: true });
-        handleCameraResult(result);
-        updateUI();
+        if (selection === 'dual') {
+          await showDualCameraSelector();
+        } else {
+          const result = await videoComposer.setCaptureMode(selection, { forceRestart: true });
+          handleCameraResult(result);
+          updateUI();
+        }
       }
     );
   });
@@ -1412,10 +1617,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   btnDual.addEventListener('click', async () => {
-    const result = await videoComposer.setCaptureMode('dual', { forceRestart: true });
-    handleCameraResult(result);
-    updateUI();
     hideModal();
+    await showDualCameraSelector();
   });
 
   btnFacingUser.addEventListener('click', async () => {

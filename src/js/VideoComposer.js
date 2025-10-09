@@ -36,6 +36,11 @@ class VideoComposer {
       isRecording: false
     };
 
+    this.dualPreferences = {
+      backDeviceId: null,
+      frontDeviceId: null,
+    };
+
     // Low power mode detection
     this.lowPowerMode = false;
     this.lastFrameTime = 0;
@@ -132,6 +137,22 @@ class VideoComposer {
     return this.capabilities;
   }
 
+  setDualPreferences({ backDeviceId, frontDeviceId } = {}) {
+    this.dualPreferences = {
+      backDeviceId: backDeviceId ?? null,
+      frontDeviceId: frontDeviceId ?? null,
+    };
+  }
+
+  getDualPreferences() {
+    return { ...this.dualPreferences };
+  }
+
+  async getDualDeviceCandidates() {
+    await this._ensureDeviceLabels();
+    return this._pickCameraDevices(this.dualPreferences);
+  }
+
   _collectActiveFacingModes() {
     const facingModes = new Set();
     const tracks = [];
@@ -181,7 +202,7 @@ class VideoComposer {
     }
   }
 
-  async _pickCameraDevices() {
+  async _pickCameraDevices(preferences = {}) {
     if (!navigator?.mediaDevices?.enumerateDevices) {
       return { devices: [], back: null, front: null };
     }
@@ -204,6 +225,8 @@ class VideoComposer {
       front: ['front', 'user', 'face', 'self', 'selfie', 'inward', 'inside'],
     };
 
+    const findById = (id) => (id ? devices.find(device => device.deviceId === id) ?? null : null);
+
     const matchesKeywords = (device, list) => {
       const label = device.label?.toLowerCase() ?? '';
       const group = device.groupId?.toLowerCase() ?? '';
@@ -214,18 +237,32 @@ class VideoComposer {
       return pool.find(device => device.deviceId !== excludeId && matchesKeywords(device, list)) ?? null;
     };
 
-    let back = pickPreferred(devices, keywords.back);
+    const preferredBackId = preferences.backDeviceId ?? null;
+    const preferredFrontId = preferences.frontDeviceId ?? null;
+
+    let back = findById(preferredBackId);
+    let front = findById(preferredFrontId);
+
+    if (back && front && back.deviceId === front.deviceId) {
+      front = null;
+    }
+
+    if (!back) {
+      back = pickPreferred(devices, keywords.back);
+    }
     if (!back) {
       back = devices[0] ?? null;
     }
 
     const remaining = devices.filter(device => device.deviceId !== back?.deviceId);
-    let front = pickPreferred(remaining, keywords.front);
+
+    if (!front) {
+      front = pickPreferred(remaining, keywords.front);
+    }
     if (!front) {
       front = remaining[0] ?? null;
     }
 
-    // If no distinct remaining device, attempt to find any other distinct entry
     if (!front) {
       front = devices.find(device => device.deviceId !== back?.deviceId) ?? null;
     }
@@ -388,7 +425,7 @@ class VideoComposer {
     };
 
     await this._ensureDeviceLabels();
-    const { devices, back, front } = await this._pickCameraDevices();
+    const { devices, back, front } = await this._pickCameraDevices(this.dualPreferences);
 
     const noDistinctCameras = !back || !front || back.deviceId === front.deviceId;
     if (noDistinctCameras) {
@@ -485,6 +522,11 @@ class VideoComposer {
     this.state.backStream = backStream;
     this.state.frontStream = frontStream;
     this.audioTrack = backStream.getAudioTracks()[0] ?? null;
+
+    this.setDualPreferences({
+      backDeviceId: back.deviceId,
+      frontDeviceId: front.deviceId,
+    });
 
     this._setDisplayMode('dual');
     this.dualBackVideo.srcObject = backStream;
