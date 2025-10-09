@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingsButton = document.getElementById('settingsButton');
   const settingsMenu = document.getElementById('settingsMenu');
 
+  const driveTypeSelector = document.getElementById('driveTypeSelector');
   const captureSettingsButton = document.getElementById('captureSettingsButton');
   const currentCaptureSetting = document.getElementById('currentCaptureSetting');
   const facingCameraButton = document.getElementById('facingCameraButton');
@@ -539,6 +540,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   settingsModalClose.addEventListener('click', hideModal);
   pastTripsClose.addEventListener('click', hidePastTripsOverlay);
   clearTripsButton.addEventListener('click', handleClearTrips);
+
+  driveTypeSelector.addEventListener('change', (event) => {
+    tripRecorder.setDriveType(event.target.value);
+  });
 
   closeVideoPlayer.addEventListener('click', () => {
     replayVideoPlayer.pause();
