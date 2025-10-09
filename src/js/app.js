@@ -175,15 +175,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // --- Orientation Handling ---
   const isLandscape = () => window.matchMedia("(orientation: landscape)").matches || window.innerWidth > window.innerHeight;
+  const isMobileViewport = () => window.matchMedia('(max-width: 768px)').matches;
 
   const showNudge = () => {
-    // Show nudge only if recording, not dismissed, and in portrait.
-    if (isRecording && !nudgeDismissed && !isLandscape()) {
+    // Show nudge only if recording, not dismissed, on mobile, and in portrait.
+    if (!landscapeNudge) return;
+    if (isRecording && !nudgeDismissed && isMobileViewport() && !isLandscape()) {
       landscapeNudge.classList.remove('hidden');
     }
   };
 
   const hideNudge = () => {
+    if (!landscapeNudge) return;
     landscapeNudge.classList.add('hidden');
   };
 
@@ -198,6 +201,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
+  let recordingFullscreenRequested = false;
+
+  const requestRecordingFullscreen = async () => {
+    if (typeof document === 'undefined') return;
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      recordingFullscreenRequested = true;
+      return;
+    }
+
+    const fullscreenTarget = videoContainer ?? document.documentElement;
+    if (!fullscreenTarget) return;
+
+    const request = fullscreenTarget.requestFullscreen
+      || fullscreenTarget.webkitRequestFullscreen
+      || fullscreenTarget.mozRequestFullScreen
+      || fullscreenTarget.msRequestFullscreen;
+
+    if (!request) return;
+
+    try {
+      await request.call(fullscreenTarget);
+      recordingFullscreenRequested = true;
+    } catch (error) {
+      recordingFullscreenRequested = false;
+      console.warn('Could not enter fullscreen for recording:', error);
+    }
+  };
+
+  const exitRecordingFullscreen = async () => {
+    if (typeof document === 'undefined') return;
+    if (!recordingFullscreenRequested) return;
+
+    const exit = document.exitFullscreen
+      || document.webkitExitFullscreen
+      || document.mozCancelFullScreen
+      || document.msExitFullscreen;
+
+    if (!exit) {
+      recordingFullscreenRequested = false;
+      return;
+    }
+
+    try {
+      await exit.call(document);
+    } catch (error) {
+      console.warn('Could not exit fullscreen after recording:', error);
+    } finally {
+      recordingFullscreenRequested = false;
+    }
+  };
+
+  const handleFullscreenChange = () => {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      recordingFullscreenRequested = false;
+    }
+  };
+
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
   // Debounced handler for orientation changes
   let orientationTimeout;
   const handleOrientationChange = () => {
@@ -208,8 +271,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else {
         showNudge(); // Re-check if nudge should be shown (e.g., if recording)
       }
+      syncDualPreviewLayout();
     }, 100); // Debounce to prevent flicker
   };
+
+  function syncDualPreviewLayout() {
+    if (!dualVideoContainer) return;
+    const dualActive = videoComposer?.state?.captureMode === 'dual' && !dualVideoContainer.classList.contains('invisible');
+    if (!dualActive) {
+      dualVideoContainer.classList.remove('dual-landscape', 'dual-portrait');
+      return;
+    }
+
+    const landscape = isLandscape();
+    dualVideoContainer.classList.toggle('dual-landscape', landscape);
+    dualVideoContainer.classList.toggle('dual-portrait', !landscape);
+  }
 
   const clearCameraStatusTimer = () => {
     if (cameraStatusTimeout) {
@@ -457,6 +534,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     refreshRecordingControlsVisibility();
+    syncDualPreviewLayout();
   };
 
   // Modal Functions
@@ -1274,9 +1352,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
+    nudgeDismissed = false;
     isRecording = true;
     isPaused = false;
+    await requestRecordingFullscreen();
+    await preferLandscape();
     updateUI();
+    showNudge();
 
     // Acquire wake lock
     try {
@@ -1344,6 +1426,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     isPaused = false;
     videoComposer.resumeCapture();
     updateUI();
+    hideNudge();
 
     // Release wake lock
     if (wakeLock) {
@@ -1351,6 +1434,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       wakeLock = null;
       console.log('Screen Wake Lock released.');
     }
+
+    await exitRecordingFullscreen();
 
     liveHUD.stop();
     if (currentMode === 'map') {
@@ -1622,6 +1707,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('Calling initShareButton with trip:', trip, 'and summaryMap:', summaryMap);
     initShareButton(trip, summaryMap, getTripVideoBlob);
   };
+
+  if (dismissNudge) {
+    dismissNudge.addEventListener('click', () => {
+      nudgeDismissed = true;
+      hideNudge();
+    });
+  }
+
+  window.addEventListener('resize', handleOrientationChange, { passive: true });
+  window.addEventListener('orientationchange', handleOrientationChange);
+
+  const orientationMedia = window.matchMedia('(orientation: landscape)');
+  if (orientationMedia) {
+    if (typeof orientationMedia.addEventListener === 'function') {
+      orientationMedia.addEventListener('change', handleOrientationChange);
+    } else if (typeof orientationMedia.addListener === 'function') {
+      orientationMedia.addListener(handleOrientationChange);
+    }
+  }
+
+  handleOrientationChange();
 
   // Event Listeners
   startStopButton.addEventListener('click', () => {
