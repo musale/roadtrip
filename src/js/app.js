@@ -389,24 +389,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const shareMenu = document.createElement('div');
     shareMenu.className = 'share-menu absolute bg-surface/95 border border-brand/30 rounded-lg shadow-neon text-sm text-white backdrop-blur z-[999] overflow-hidden';
-    shareMenu.style.top = `${menuRect.bottom + 8}px`; // 8px below the button
     shareMenu.style.minWidth = `200px`; // Increased width for better readability
+    portal.appendChild(shareMenu); // Append first to get offsetWidth/Height
 
-    // Calculate horizontal position to keep it within viewport
     const viewportWidth = window.innerWidth;
-    const menuWidth = shareMenu.offsetWidth; // Get the actual width of the menu
-    let leftPosition = menuRect.left; // Default: align left with button
+    const viewportHeight = window.innerHeight;
+    const menuWidth = shareMenu.offsetWidth;
+    const menuHeight = shareMenu.offsetHeight;
+    const padding = 10; // Padding from viewport edges
 
-    // Check if aligning left with button causes overflow on the right
-    if (leftPosition + menuWidth > viewportWidth - 10) {
-      // If it overflows, try aligning right with button
-      leftPosition = menuRect.right - menuWidth;
+    let topPosition = menuRect.bottom + 8; // Default: 8px below the button
+    let leftPosition = menuRect.right - menuWidth; // Default: align right edge of menu with right edge of button
 
-      // If aligning right with button causes overflow on the left
-      if (leftPosition < 10) {
-        leftPosition = 10; // Align with left edge of viewport with padding
+    // Horizontal positioning
+    if (leftPosition < padding) {
+      leftPosition = padding; // If it overflows left, align with left edge of viewport with padding
+    }
+
+    // Vertical positioning
+    if (topPosition + menuHeight > viewportHeight - padding) {
+      // If it overflows bottom, try positioning above the button
+      topPosition = menuRect.top - menuHeight - 8; // 8px above the button
+      if (topPosition < padding) {
+        topPosition = padding; // Fallback to top edge with padding
       }
     }
+
+    shareMenu.style.top = `${topPosition}px`;
     shareMenu.style.left = `${leftPosition}px`;
 
     // Add menu items (similar to the old HTML structure)
