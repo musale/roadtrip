@@ -191,35 +191,51 @@
     </div>
 
     <!-- Trip Summary Overlay (initially hidden) -->
-    <div id="tripSummaryOverlay" class="hidden fixed inset-0 bg-surface z-40">
-      <div class="p-4 md:p-6 text-brand font-body w-full h-full relative">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-xl font-heading">Trip Summary</h2>
-          <div class="flex items-center gap-2">
-            <!-- Share Button & Menu -->
-            <div class="relative">
-              <button id="shareTripSummaryBtn" title="Share summary image" aria-label="Share summary image"
-                class="hidden bg-brand text-black p-2 rounded-full font-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path
-                    d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" />
-                </svg>
-              </button>
-              <div id="shareMenu"
-                class="hidden absolute right-0 top-full mt-2 w-48 bg-surface/95 border border-brand/30 rounded-lg shadow-neon text-sm text-white backdrop-blur z-50 overflow-hidden">
-                <button id="shareVideoOption" class="settings-item">Share Video</button>
-                <button id="shareImageOption" class="settings-item">Share Summary Image</button>
+    <div id="tripSummaryOverlay" class="hidden fixed inset-0 bg-[#050505]/95 backdrop-blur-sm z-40">
+      <div class="relative flex h-full w-full flex-col text-brand font-body">
+        <div class="absolute top-6 right-6 flex items-center gap-3 md:top-10 md:right-12">
+          <div class="relative">
+            <button id="shareTripSummaryBtn" title="Share summary image" aria-label="Share summary image"
+              class="hidden rounded-full bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.3em] text-white/80 transition-opacity duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75 hover:text-white">
+              Share
+            </button>
+            <div id="shareMenu"
+              class="hidden absolute right-0 top-full mt-2 w-48 rounded-2xl bg-surface/95 text-sm text-white/90 shadow-neon backdrop-blur">
+              <button id="shareVideoOption" class="settings-item">Share Video</button>
+              <button id="shareImageOption" class="settings-item">Share Summary Image</button>
+            </div>
+          </div>
+          <button id="tripSummaryClose"
+            class="flex h-11 w-11 items-center justify-center rounded-full bg-white/5 text-xl text-white/70 transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75 hover:text-white">×</button>
+        </div>
+
+        <div class="flex flex-1 items-center justify-center px-6 pb-10 pt-20 md:px-12 md:pt-28">
+          <div class="flex w-full max-w-3xl flex-col items-center gap-10 text-center text-white">
+            <div class="trip-summary-map relative w-full max-h-[420px] overflow-hidden rounded-[2.5rem]">
+              <div id="tripSummaryMap" class="absolute inset-0"></div>
+              <div
+                class="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-white/0">
               </div>
             </div>
-            <button id="tripSummaryClose"
-              class="bg-brand text-black p-2 rounded-full font-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">X</button>
-          </div>
-        </div>
-        <div class="space-y-4">
-          <div id="tripSummaryMap" class="card bg-black/30 rounded-lg" style="height:300px"></div>
-          <div id="tripStats" class="text-sm md:text-base grid grid-cols-3 gap-4 text-center"></div>
-          <div class="flex justify-center">
-            <canvas id="elevationProfile" width="300" height="100" class="hidden rounded-lg bg-black/20"></canvas>
+
+            <div class="flex w-full flex-col items-center gap-4">
+              <div class="uppercase tracking-[0.55em] text-xs text-white/30">Trip Summary</div>
+              <h2 id="tripSummaryName" class="text-3xl font-heading text-white md:text-4xl">Untitled Drive</h2>
+              <p id="tripSummaryStatsLine" class="text-lg font-heading text-white/70 md:text-xl">0 km · 0 min · Avg 0
+                km/h</p>
+              <p id="tripSummaryNarrative" class="max-w-2xl text-base text-white/70 md:text-lg">You cruised smoothly
+                today.</p>
+              <div class="mt-4 flex flex-col items-center gap-6 md:flex-row md:gap-16">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="text-xs uppercase tracking-[0.4em] text-white/30">Elevation</span>
+                  <p id="tripSummaryElevation" class="text-lg font-heading text-brand md:text-xl">—</p>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="text-xs uppercase tracking-[0.4em] text-white/30">Start</span>
+                  <p id="tripSummaryStartTime" class="text-lg font-heading text-white md:text-xl">—</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

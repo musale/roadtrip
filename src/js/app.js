@@ -72,8 +72,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const tripSummaryOverlay = document.getElementById('tripSummaryOverlay');
   const tripSummaryClose = document.getElementById('tripSummaryClose');
   const tripSummaryMap = document.getElementById('tripSummaryMap');
-  const tripStats = document.getElementById('tripStats');
-  const elevationProfile = document.getElementById('elevationProfile');
+  const tripSummaryName = document.getElementById('tripSummaryName');
+  const tripSummaryStatsLine = document.getElementById('tripSummaryStatsLine');
+  const tripSummaryNarrative = document.getElementById('tripSummaryNarrative');
+  const tripSummaryElevation = document.getElementById('tripSummaryElevation');
+  const tripSummaryStartTime = document.getElementById('tripSummaryStartTime');
   let summaryMap = null; // To hold the map instance
 
 
@@ -372,6 +375,133 @@ document.addEventListener('DOMContentLoaded', async () => {
     const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
     const seconds = String(totalSeconds % 60).padStart(2, '0');
     return `${hours}:${minutes}:${seconds}`;
+  };
+
+  const formatDurationSummary = (durationMs = 0) => {
+    if (!Number.isFinite(durationMs) || durationMs <= 0) {
+      return '0 min';
+    }
+    const totalSeconds = Math.round(durationMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    if (hours >= 1) {
+      const hourLabel = `${hours} hr${hours > 1 ? 's' : ''}`;
+      if (minutes > 0) {
+        return `${hourLabel} ${minutes} min`;
+      }
+      return hourLabel;
+    }
+    if (minutes >= 1) {
+      return `${minutes} min`;
+    }
+    return 'Less than a minute';
+  };
+
+  const formatDistanceSummary = (meters = 0) => {
+    if (!Number.isFinite(meters) || meters <= 0) {
+      const unitLabel = speedUnit === 'MPH' ? 'mi' : 'km';
+      return `0 ${unitLabel}`;
+    }
+    const unitLabel = speedUnit === 'MPH' ? 'mi' : 'km';
+    const value = speedUnit === 'MPH' ? meters * 0.000621371 : meters / 1000;
+    const decimals = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+    const formatted = value.toFixed(decimals).replace(/\.0+$/, '');
+    return `${formatted} ${unitLabel}`;
+  };
+
+  const formatAverageSpeedSummary = (avgKph = 0) => {
+    const converted = speedUnit === 'MPH' ? avgKph * 0.621371 : avgKph;
+    const unitLabel = speedUnit === 'MPH' ? 'mph' : 'km/h';
+    if (!Number.isFinite(converted) || converted <= 0) {
+      return `0 ${unitLabel}`;
+    }
+    const rounded = converted >= 100 ? Math.round(converted) : Math.round(converted * 10) / 10;
+    const formatted = Number.isInteger(rounded) ? rounded : rounded.toFixed(1);
+    return `${formatted} ${unitLabel}`;
+  };
+
+  const formatStartTimeSummary = (timestamp) => {
+    if (!timestamp) {
+      return '—';
+    }
+    const startDate = new Date(timestamp);
+    if (Number.isNaN(startDate.getTime())) {
+      return '—';
+    }
+    const now = new Date();
+    const sameDay = startDate.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const dayLabel = sameDay
+      ? 'Today'
+      : startDate.toDateString() === yesterday.toDateString()
+        ? 'Yesterday'
+        : startDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    const timeLabel = startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    return `${dayLabel} · ${timeLabel}`;
+  };
+
+  const buildNarrative = (trip) => {
+    if (!trip?.stats) {
+      return 'You cruised smoothly today.';
+    }
+    const distanceKm = Number.isFinite(trip.stats.distanceM) ? trip.stats.distanceM / 1000 : 0;
+    const avgKph = Number.isFinite(trip.stats.avgKph) ? trip.stats.avgKph : 0;
+
+    if (distanceKm < 1) {
+      return 'A short spin, but every moment counted.';
+    }
+    if (avgKph < 20) {
+      return 'You took it easy and savored the drive.';
+    }
+    if (avgKph < 45) {
+      return 'You cruised smoothly today.';
+    }
+    if (avgKph < 70) {
+      return 'You kept a confident rhythm on the road.';
+    }
+    return 'You pushed the pace and owned the night.';
+  };
+
+  const formatElevationSummary = (points = []) => {
+    if (!Array.isArray(points) || points.length === 0) {
+      return 'Not recorded';
+    }
+    const elevations = points
+      .map((p) => (typeof p?.alt === 'number' && Number.isFinite(p.alt) ? p.alt : null))
+      .filter((alt) => alt !== null);
+    if (elevations.length === 0) {
+      return 'Not recorded';
+    }
+    const minEleMeters = Math.min(...elevations);
+    const maxEleMeters = Math.max(...elevations);
+    const toUnit = (value) => {
+      if (speedUnit === 'MPH') {
+        const feet = value * 3.28084;
+        return `${Math.round(feet)} ft`;
+      }
+      return `${Math.round(value)} m`;
+    };
+    if (Math.abs(maxEleMeters - minEleMeters) < 3) {
+      return `Flat · ${toUnit(maxEleMeters)}`;
+    }
+    return `Min ${toUnit(minEleMeters)} · Max ${toUnit(maxEleMeters)}`;
+  };
+
+  const resolveTripName = (trip) => {
+    const explicit = typeof trip?.name === 'string' ? trip.name.trim() : '';
+    if (explicit) {
+      return explicit;
+    }
+    const driveTypeLabel = typeof trip?.driveType === 'string' ? trip.driveType.trim() : '';
+    if (driveTypeLabel) {
+      return driveTypeLabel;
+    }
+    const startDate = new Date(trip?.startedAt ?? Date.now());
+    if (!Number.isNaN(startDate.getTime())) {
+      return startDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+    return 'Untitled Drive';
   };
 
   const getDistanceDisplay = (meters = 0) => {
@@ -799,51 +929,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       summaryMap.remove();
       summaryMap = null;
     }
-    // Reset stats and canvas
-    tripStats.innerHTML = '';
-    elevationProfile.classList.add('hidden');
-    const ctx = elevationProfile.getContext('2d');
-    ctx.clearRect(0, 0, elevationProfile.width, elevationProfile.height);
-  };
-
-  const drawElevationProfile = (elevations) => {
-    const canvas = elevationProfile;
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
-    const padding = 10;
-
-    const validElevations = elevations.filter(e => e !== null && e !== undefined);
-    if (validElevations.length < 2) {
-      elevationProfile.classList.add('hidden');
-      return;
-    }
-
-    elevationProfile.classList.remove('hidden');
-    ctx.clearRect(0, 0, width, height);
-
-    const minEle = Math.min(...validElevations);
-    const maxEle = Math.max(...validElevations);
-    const eleRange = maxEle - minEle;
-
-    const getX = (index) => (index / (validElevations.length - 1)) * (width - 2 * padding) + padding;
-    const getY = (ele) => height - (((ele - minEle) / eleRange) * (height - 2 * padding) + padding);
-
-    // Draw profile line
-    ctx.beginPath();
-    ctx.moveTo(getX(0), getY(validElevations[0]));
-    validElevations.forEach((ele, index) => {
-      ctx.lineTo(getX(index), getY(ele));
-    });
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#0ea5e9';
-    ctx.stroke();
-
-    // Draw min/max labels
-    ctx.font = '10px sans-serif';
-    ctx.fillStyle = 'white';
-    ctx.fillText(`${minEle.toFixed(0)}m`, 5, height - 5);
-    ctx.fillText(`${maxEle.toFixed(0)}m`, 5, 15);
+    // Reset narrative content
+    if (tripSummaryName) tripSummaryName.textContent = 'Untitled Drive';
+    if (tripSummaryStatsLine) tripSummaryStatsLine.textContent = '0 km · 0 min · Avg 0 km/h';
+    if (tripSummaryNarrative) tripSummaryNarrative.textContent = 'You cruised smoothly today.';
+    if (tripSummaryElevation) tripSummaryElevation.textContent = '—';
+    if (tripSummaryStartTime) tripSummaryStartTime.textContent = '—';
   };
 
   const showTripSummary = (trip) => {
@@ -853,44 +944,54 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // 1. Prepare data
-    const coords = trip.points.map(p => [p.lon, p.lat]);
-    const elevations = trip.points.map(p => p.alt).filter(alt => alt !== null && alt !== undefined);
-    const hasElevation = elevations.length === coords.length;
+    const coords = trip.points
+      .filter((point) => Number.isFinite(point?.lon) && Number.isFinite(point?.lat))
+      .map(p => [p.lon, p.lat]);
+    if (coords.length < 2) {
+      showNotification('Trip data is missing location details.', { variant: 'error' });
+      return;
+    }
+    const highestPoint = trip.points.reduce((highest, point) => {
+      if (!point || typeof point.alt !== 'number' || !Number.isFinite(point.alt)) return highest;
+      if (!highest || point.alt > highest.alt) return point;
+      return highest;
+    }, null);
+    const hasAltitude = !!(highestPoint && Number.isFinite(highestPoint.alt));
 
-    const geojson = {
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: coords
-      },
-      properties: {
-        ...(hasElevation && { elevations })
+    if (tripSummaryName) {
+      tripSummaryName.textContent = resolveTripName(trip);
+    }
+
+    if (tripSummaryStatsLine) {
+      const distanceText = formatDistanceSummary(trip.stats.distanceM);
+      const durationLabel = formatDurationSummary(trip.stats.durationMs);
+      const avgSpeedLabel = formatAverageSpeedSummary(trip.stats.avgKph);
+      tripSummaryStatsLine.textContent = `${distanceText} · ${durationLabel} · Avg ${avgSpeedLabel}`;
+    }
+
+    const narrativeBase = buildNarrative(trip);
+    let narrativeLine = narrativeBase;
+
+    if (hasAltitude && highestPoint && Number.isFinite(highestPoint.alt)) {
+      const altitudeValue = speedUnit === 'MPH'
+        ? Math.round(highestPoint.alt * 3.28084)
+        : Math.round(highestPoint.alt);
+      const altitudeUnit = speedUnit === 'MPH' ? 'ft' : 'm';
+      if (altitudeValue > 0) {
+        narrativeLine = `${narrativeBase} Highest climb reached ${altitudeValue} ${altitudeUnit}.`;
       }
-    };
+    }
 
-    // 2. Display Stats
-    const { value: distValue, unit: distUnit } = getDistanceDisplay(trip.stats.distanceM);
-    const { value: avgSpeedValue, unit: speedUnit } = getSpeedDisplay(trip.stats.avgKph);
-    tripStats.innerHTML = `
-      <div>
-        <div class="text-xs text-white/60">Distance</div>
-        <div class="text-lg font-bold">${distValue} ${distUnit}</div>
-      </div>
-      <div>
-        <div class="text-xs text-white/60">Duration</div>
-        <div class="text-lg font-bold">${formatDuration(trip.stats.durationMs)}</div>
-      </div>
-      <div>
-        <div class="text-xs text-white/60">Avg Speed</div>
-        <div class="text-lg font-bold">${avgSpeedValue} ${speedUnit}</div>
-      </div>
-    `;
+    if (tripSummaryNarrative) {
+      tripSummaryNarrative.textContent = narrativeLine;
+    }
 
-    // 3. Display Elevation Profile
-    if (hasElevation) {
-      drawElevationProfile(elevations);
-    } else {
-      elevationProfile.classList.add('hidden');
+    if (tripSummaryElevation) {
+      tripSummaryElevation.textContent = formatElevationSummary(trip.points);
+    }
+
+    if (tripSummaryStartTime) {
+      tripSummaryStartTime.textContent = formatStartTimeSummary(trip.startedAt);
     }
 
     // 4. Show Overlay
@@ -917,13 +1018,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     summaryMap.on('load', () => {
-      summaryMap.addSource('route', { type: 'geojson', data: geojson });
+      summaryMap.addSource('route', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: coords,
+          },
+        },
+      });
 
       summaryMap.addLayer({
         id: 'route-line',
         type: 'line',
         source: 'route',
-        paint: { 'line-color': '#0ea5e9', 'line-width': 4, 'line-opacity': 0.8 }
+        paint: {
+          'line-color': '#00F5D4',
+          'line-width': 4,
+          'line-opacity': 0.9,
+          'line-blur': 0.2,
+        },
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
       });
 
       const startPoint = { type: 'Feature', geometry: { type: 'Point', coordinates: coords[0] }, properties: { kind: 'start' } };
@@ -939,10 +1058,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         type: 'circle',
         source: 'route-points',
         paint: {
-          'circle-radius': 6,
-          'circle-color': ['match', ['get', 'kind'], 'start', '#10b981', 'end', '#ef4444', '#ccc'],
+          'circle-radius': 5,
+          'circle-color': '#0f172a',
           'circle-stroke-width': 2,
-          'circle-stroke-color': '#fff'
+          'circle-stroke-color': ['match', ['get', 'kind'], 'start', '#22ffcc', 'end', '#ffffff', '#ffffff'],
+          'circle-stroke-opacity': 0.9,
         }
       });
 
@@ -951,8 +1071,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         type: 'symbol',
         source: 'route-points',
         filter: ['==', ['get', 'kind'], 'start'],
-        layout: { 'text-field': 'A', 'text-font': ['Open Sans Bold'], 'text-size': 12, 'text-offset': [0, 0.1] },
-        paint: { 'text-color': '#fff' }
+        layout: { 'text-field': 'Start', 'text-font': ['Open Sans Bold'], 'text-size': 11, 'text-offset': [0, 0.8] },
+        paint: { 'text-color': '#22ffcc', 'text-halo-color': '#000000', 'text-halo-width': 1.2 }
       });
 
       summaryMap.addLayer({
@@ -960,8 +1080,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         type: 'symbol',
         source: 'route-points',
         filter: ['==', ['get', 'kind'], 'end'],
-        layout: { 'text-field': 'B', 'text-font': ['Open Sans Bold'], 'text-size': 12, 'text-offset': [0, 0.1] },
-        paint: { 'text-color': '#fff' }
+        layout: { 'text-field': 'Finish', 'text-font': ['Open Sans Bold'], 'text-size': 11, 'text-offset': [0, 0.8] },
+        paint: { 'text-color': '#ffffff', 'text-halo-color': '#000000', 'text-halo-width': 1.2 }
       });
 
 
