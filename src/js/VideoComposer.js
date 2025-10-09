@@ -3,6 +3,9 @@ const VIDEO_HEIGHT = 720; // Internal resolution for processing
 const FRAME_RATE = 30;
 const CHUNK_DURATION_MS = 1000; // 1 second chunks
 
+const FRONT_LABEL_KEYWORDS = ['front', 'user', 'selfie', 'facing front', 'front camera'];
+const BACK_LABEL_KEYWORDS = ['back', 'rear', 'environment', 'facing back', 'rear camera'];
+
 class VideoComposer {
   constructor({
     singleVideoEl,
@@ -216,26 +219,57 @@ class VideoComposer {
       return { devices: [], back: null, front: null };
     }
 
+    const dedupedDevices = new Map();
+    devices.forEach(device => {
+      const key = device.deviceId && device.deviceId !== 'default'
+        ? device.deviceId
+        : `${device.groupId ?? 'unknown'}::${device.label ?? 'unnamed'}`;
+      const existing = dedupedDevices.get(key);
+      const existingLabel = existing?.label?.toLowerCase() ?? '';
+      const currentLabel = device.label?.toLowerCase() ?? '';
+      const preferCurrent = () => {
+        if (!existingLabel && currentLabel) return true;
+        if (!currentLabel && existingLabel) return false;
+        return currentLabel.length > existingLabel.length;
+      };
+      if (!existing || preferCurrent()) {
+        dedupedDevices.set(key, device);
+      }
+    });
+
+    devices = Array.from(dedupedDevices.values());
+
     if (devices.length === 0) {
       return { devices, back: null, front: null };
     }
 
-    const keywords = {
-      back: ['back', 'rear', 'environment', 'world', 'outside'],
-      front: ['front', 'user', 'face', 'self', 'selfie', 'inward', 'inside'],
-    };
-
     const findById = (id) => (id ? devices.find(device => device.deviceId === id) ?? null : null);
 
-    const matchesKeywords = (device, list) => {
-      const label = device.label?.toLowerCase() ?? '';
-      const group = device.groupId?.toLowerCase() ?? '';
-      return list.some(keyword => label.includes(keyword) || (group && group.includes(keyword)));
+    const categorizeFacing = (label = '') => {
+      const lower = label.toLowerCase();
+      if (FRONT_LABEL_KEYWORDS.some(keyword => lower.includes(keyword))) {
+        return 'front';
+      }
+      if (BACK_LABEL_KEYWORDS.some(keyword => lower.includes(keyword))) {
+        return 'back';
+      }
+      return 'unknown';
     };
 
-    const pickPreferred = (pool, list, excludeId = null) => {
-      return pool.find(device => device.deviceId !== excludeId && matchesKeywords(device, list)) ?? null;
-    };
+    const frontCandidates = [];
+    const backCandidates = [];
+    const unknownCandidates = [];
+
+    devices.forEach(device => {
+      const facing = categorizeFacing(device.label ?? '');
+      if (facing === 'front') {
+        frontCandidates.push(device);
+      } else if (facing === 'back') {
+        backCandidates.push(device);
+      } else {
+        unknownCandidates.push(device);
+      }
+    });
 
     const preferredBackId = preferences.backDeviceId ?? null;
     const preferredFrontId = preferences.frontDeviceId ?? null;
@@ -248,23 +282,29 @@ class VideoComposer {
     }
 
     if (!back) {
-      back = pickPreferred(devices, keywords.back);
+      back = backCandidates.find(device => device.deviceId !== front?.deviceId) ?? null;
     }
     if (!back) {
-      back = devices[0] ?? null;
-    }
-
-    const remaining = devices.filter(device => device.deviceId !== back?.deviceId);
-
-    if (!front) {
-      front = pickPreferred(remaining, keywords.front);
-    }
-    if (!front) {
-      front = remaining[0] ?? null;
+      back = unknownCandidates.find(device => device.deviceId !== front?.deviceId) ?? null;
     }
 
     if (!front) {
+      front = frontCandidates.find(device => device.deviceId !== back?.deviceId) ?? null;
+    }
+    if (!front) {
+      front = unknownCandidates.find(device => device.deviceId !== back?.deviceId) ?? null;
+    }
+
+    if (!front && !back && devices.length > 0) {
+      front = devices[0];
+    }
+
+    if (!front && devices.length > 1) {
       front = devices.find(device => device.deviceId !== back?.deviceId) ?? null;
+    }
+
+    if (!back && devices.length > 1) {
+      back = devices.find(device => device.deviceId !== front?.deviceId) ?? null;
     }
 
     return { devices, back, front };

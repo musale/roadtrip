@@ -446,11 +446,79 @@ document.addEventListener('DOMContentLoaded', async () => {
     const suggestedFront = candidates?.front ?? null;
     const preferred = videoComposer.getDualPreferences?.() ?? {};
 
-    const defaultBackId = preferred.backDeviceId ?? suggestedBack?.deviceId ?? devices[0].deviceId;
-    const defaultFrontId = preferred.frontDeviceId
-      ?? suggestedFront?.deviceId
-      ?? devices.find(device => device.deviceId !== defaultBackId)?.deviceId
-      ?? devices[0].deviceId;
+    const FRONT_LABEL_KEYWORDS = ['front', 'user', 'selfie', 'facing front', 'front camera'];
+    const BACK_LABEL_KEYWORDS = ['back', 'rear', 'environment', 'facing back', 'rear camera'];
+
+    const labelConfidence = (label = '') => {
+      const lower = label.toLowerCase();
+      let score = 0;
+      if (!lower) return score;
+      if (FRONT_LABEL_KEYWORDS.some(keyword => lower.includes(keyword))) score += 2;
+      if (BACK_LABEL_KEYWORDS.some(keyword => lower.includes(keyword))) score += 2;
+      score += Math.min(lower.length, 40) / 5;
+      return score;
+    };
+
+    const deviceMap = new Map();
+    devices.forEach((device) => {
+      const key = device.deviceId && device.deviceId !== 'default'
+        ? device.deviceId
+        : `${device.groupId ?? 'unknown'}::${device.label ?? 'unnamed'}`;
+      const existing = deviceMap.get(key);
+      if (!existing || labelConfidence(device.label) > labelConfidence(existing.label)) {
+        deviceMap.set(key, device);
+      }
+    });
+
+    const uniqueDevices = Array.from(deviceMap.values());
+    if (uniqueDevices.length < 2) {
+      showNotification('We need at least two distinct cameras to enable dual mode.', { variant: 'warning' });
+      return false;
+    }
+
+    const categorizeFacing = (label = '') => {
+      const lower = label.toLowerCase();
+      if (FRONT_LABEL_KEYWORDS.some(keyword => lower.includes(keyword))) return 'front';
+      if (BACK_LABEL_KEYWORDS.some(keyword => lower.includes(keyword))) return 'back';
+      return 'unknown';
+    };
+
+    const annotatedDevices = uniqueDevices.map(device => ({
+      device,
+      facing: categorizeFacing(device.label ?? ''),
+    }));
+
+    const frontDevices = annotatedDevices.filter(item => item.facing === 'front');
+    const backDevices = annotatedDevices.filter(item => item.facing === 'back');
+    const unknownDevices = annotatedDevices.filter(item => item.facing === 'unknown');
+
+    const ensureAvailableId = (deviceId, fallbackFacing) => {
+      if (!deviceId) return null;
+      const exists = annotatedDevices.some(({ device }) => device.deviceId === deviceId);
+      if (exists) return deviceId;
+      const pool = fallbackFacing === 'back' ? backDevices : frontDevices;
+      if (pool.length > 0) {
+        return pool[0].device.deviceId;
+      }
+      const altPool = fallbackFacing === 'back' ? unknownDevices : unknownDevices;
+      if (altPool.length > 0) {
+        return altPool[0].device.deviceId;
+      }
+      return annotatedDevices[0]?.device?.deviceId ?? null;
+    };
+
+    let defaultBackId = preferred.backDeviceId ?? suggestedBack?.deviceId ?? null;
+    let defaultFrontId = preferred.frontDeviceId ?? suggestedFront?.deviceId ?? null;
+
+    defaultBackId = ensureAvailableId(defaultBackId, 'back')
+      ?? backDevices[0]?.device?.deviceId
+      ?? annotatedDevices[0].device.deviceId;
+
+    defaultFrontId = ensureAvailableId(defaultFrontId, 'front')
+      ?? frontDevices.find(item => item.device.deviceId !== defaultBackId)?.device?.deviceId
+      ?? unknownDevices.find(item => item.device.deviceId !== defaultBackId)?.device?.deviceId
+      ?? annotatedDevices.find(item => item.device.deviceId !== defaultBackId)?.device?.deviceId
+      ?? annotatedDevices[0].device.deviceId;
 
     settingsModalTitle.textContent = 'Select Dual Cameras';
     settingsModalContent.innerHTML = '';
@@ -469,19 +537,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       front: defaultFrontId,
     };
 
-    const facingDescription = (device) => {
-      const label = device.label?.toLowerCase() ?? '';
-      if (!label) return '';
-      if (/(front|user|self|face|inward)/.test(label)) {
-        return 'Likely front-facing';
+    const facingDescription = (item) => {
+      if (item.facing === 'front') {
+        return 'Front-facing · mapped to user-facing camera';
       }
-      if (/(back|rear|environment|world|outside)/.test(label)) {
-        return 'Likely rear-facing';
+      if (item.facing === 'back') {
+        return 'Rear-facing · mapped to environment camera';
       }
-      return '';
+      return item.device.label ? 'Orientation unclear · treat as external/unknown' : 'Orientation unclear';
     };
 
-    const buildFieldset = (name, legendText, description) => {
+    const buildFieldset = (name, legendText, description, sortedDevices, recommendedId) => {
       const fieldset = document.createElement('fieldset');
       fieldset.className = 'space-y-2';
 
@@ -497,7 +563,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         fieldset.appendChild(desc);
       }
 
-      devices.forEach((device, index) => {
+      sortedDevices.forEach((item, index) => {
+        const { device } = item;
         const optionId = `${name}-${index}`;
         const wrapper = document.createElement('label');
         wrapper.className = 'flex items-center gap-3 rounded-md border border-white/10 px-3 py-2 cursor-pointer transition hover:border-brand focus-within:border-brand';
@@ -532,12 +599,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         primaryLabel.textContent = device.label || `Camera ${index + 1}`;
         textContainer.appendChild(primaryLabel);
 
-        const facingHint = facingDescription(device);
+  const facingHint = facingDescription(item);
         if (facingHint) {
           const secondary = document.createElement('span');
           secondary.className = 'text-xs text-white/60';
           secondary.textContent = facingHint;
           textContainer.appendChild(secondary);
+        }
+
+        if (recommendedId && device.deviceId === recommendedId) {
+          const badge = document.createElement('span');
+          badge.className = 'mt-1 inline-flex w-max items-center rounded bg-emerald-400/20 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-200';
+          badge.textContent = 'Recommended';
+          textContainer.appendChild(badge);
         }
 
         wrapper.appendChild(input);
@@ -548,8 +622,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       return fieldset;
     };
 
-    const backFieldset = buildFieldset('backCamera', 'Back camera (rear view)', 'Pick the camera pointed at the road.');
-    const frontFieldset = buildFieldset('frontCamera', 'Front camera (self view)', 'Pick the camera facing you.');
+  const sortedForBack = [...backDevices, ...unknownDevices, ...frontDevices];
+  const sortedForFront = [...frontDevices, ...unknownDevices, ...backDevices];
+
+  const backFieldset = buildFieldset('backCamera', 'Back camera (rear view)', 'Pick the camera pointed at the road.', sortedForBack, defaultBackId);
+  const frontFieldset = buildFieldset('frontCamera', 'Front camera (self view)', 'Pick the camera facing you.', sortedForFront, defaultFrontId);
 
     form.appendChild(backFieldset);
     form.appendChild(frontFieldset);
