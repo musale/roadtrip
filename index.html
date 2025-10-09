@@ -34,6 +34,12 @@
     <!-- Overlay Container for all UI elements -->
     <div class="absolute inset-0 flex flex-col justify-between p-4 md:p-8">
 
+      <!-- Landscape Nudge Banner (hidden by default) -->
+      <div id="landscapeNudge" class="hidden absolute top-4 left-1/2 -translate-x-1/2 w-11/12 max-w-sm z-50 bg-yellow-400 text-black text-sm text-center p-2 rounded-lg shadow-lg flex items-center justify-between gap-2">
+        <span>Best in landscape — rotate your phone.</span>
+        <button id="dismissNudge" class="text-black/70 hover:text-black font-bold text-lg leading-none">&times;</button>
+      </div>
+
       <!-- Top-Left: Live HUD (initially hidden) -->
       <div id="liveHud"
         class="hidden bg-black bg-opacity-50 p-3 rounded-lg shadow-lg max-w-xs text-brand font-heading text-sm md:text-base">
