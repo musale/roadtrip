@@ -61,6 +61,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const emptyTripsMessage = document.getElementById('emptyTripsMessage');
   const clearTripsButton = document.getElementById('clearTripsButton');
 
+  const cameraDiagToggle = document.getElementById('cameraDiagToggle');
+  const cameraDiagSummary = document.getElementById('cameraDiagSummary');
+  const cameraDiagPanel = document.getElementById('cameraDiag');
+  const cameraDiagClose = document.getElementById('cameraDiagClose');
+  const cameraDiagRefresh = document.getElementById('cameraDiagRefresh');
+  const cameraDiagStatus = document.getElementById('cameraDiagStatus');
+  const frontListEl = document.getElementById('frontList');
+  const backListEl = document.getElementById('backList');
+  const bestFrontEl = document.getElementById('bestFront');
+  const bestBackEl = document.getElementById('bestBack');
+
   if (clearTripsButton) {
     clearTripsButton.disabled = true;
     clearTripsButton.classList.add('opacity-40', 'cursor-not-allowed');
@@ -114,6 +125,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   const CONTROLS_AUTO_HIDE_MS = 5000;
   let controlHideTimeoutId = null;
   let controlsAreHidden = false;
+
+  const cameraRankingState = {
+    front: [],
+    back: [],
+    lastRunAt: 0,
+    lastError: null,
+  };
+  let cameraRankingPromise = null;
+  let cameraLabelsPrimed = false;
+  let cameraLabelBootstrapPromise = null;
+  let cameraDiagVisible = false;
+
+  window.pickBestFrontCameraDeviceId = () => cameraRankingState.front[0]?.deviceId ?? null;
+  window.pickBestBackCameraDeviceId = () => cameraRankingState.back[0]?.deviceId ?? null;
 
   const clearControlHideTimeout = () => {
     if (controlHideTimeoutId) {
@@ -322,6 +347,504 @@ document.addEventListener('DOMContentLoaded', async () => {
     dualVideoContainer.classList.toggle('dual-landscape', landscape);
     dualVideoContainer.classList.toggle('dual-portrait', !landscape);
   }
+
+  const updateCameraDiagSummary = () => {
+    if (!cameraDiagSummary) return;
+    const bestBack = cameraRankingState.back[0];
+    const bestFront = cameraRankingState.front[0];
+    if (!bestBack && !bestFront) {
+      cameraDiagSummary.textContent = 'Idle';
+      return;
+    }
+    const summarize = (entry) => (entry?.deviceId ?? '—');
+    const parts = [];
+    parts.push(`Back: ${summarize(bestBack)}`);
+    parts.push(`Front: ${summarize(bestFront)}`);
+    cameraDiagSummary.textContent = parts.join(' · ');
+  };
+
+  const setCameraDiagStatusMessage = (message, tone = 'info') => {
+    if (!cameraDiagStatus) return;
+    cameraDiagStatus.textContent = message;
+    cameraDiagStatus.dataset.tone = tone;
+  };
+
+  if (cameraDiagStatus) {
+    setCameraDiagStatusMessage(cameraDiagStatus.textContent || 'Run diagnostics to inspect your cameras.', 'info');
+  }
+
+  const setDiagListsLoading = () => {
+    if (frontListEl) {
+      frontListEl.innerHTML = '<div class="diag-message">Probing front cameras…</div>';
+    }
+    if (backListEl) {
+      backListEl.innerHTML = '<div class="diag-message">Probing back cameras…</div>';
+    }
+    if (bestFrontEl) {
+      bestFrontEl.textContent = '—';
+      bestFrontEl.dataset.deviceId = '';
+      bestFrontEl.title = '';
+    }
+    if (bestBackEl) {
+      bestBackEl.textContent = '—';
+      bestBackEl.dataset.deviceId = '';
+      bestBackEl.title = '';
+    }
+  };
+
+  const bootstrapLabelsOnce = async () => {
+    if (cameraLabelsPrimed || cameraLabelBootstrapPromise) {
+      if (cameraLabelBootstrapPromise) {
+        try {
+          await cameraLabelBootstrapPromise;
+        } catch {
+          // ignored; fallback labels will be used
+        }
+      }
+      return;
+    }
+    if (!navigator?.mediaDevices?.getUserMedia) return;
+
+    cameraLabelBootstrapPromise = (async () => {
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        cameraLabelsPrimed = true;
+      } catch (error) {
+        console.warn('Unable to unlock camera labels:', error);
+        throw error;
+      } finally {
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+      }
+    })().finally(() => {
+      cameraLabelBootstrapPromise = null;
+    });
+
+    try {
+      await cameraLabelBootstrapPromise;
+    } catch {
+      // Continue without labelled devices if permission denied.
+    }
+  };
+
+  const dedupeByGroupId = (devices) => {
+    const map = new Map();
+    devices.forEach((device) => {
+      const key = device.groupId || device.deviceId;
+      if (!map.has(key)) {
+        map.set(key, device);
+      }
+    });
+    return Array.from(map.values());
+  };
+
+  const isFront = (label = '') => /front|user/i.test(label);
+  const isBack = (label = '') => /back|rear|environment/i.test(label);
+
+  const probeDeviceOnce = async (device, baseConstraints) => {
+    const constraints = {
+      ...baseConstraints,
+      deviceId: { exact: device.deviceId },
+    };
+
+    const request = { video: constraints, audio: false };
+    const stream = await navigator.mediaDevices.getUserMedia(request);
+    const [track] = stream.getVideoTracks();
+    const capabilities = track?.getCapabilities ? track.getCapabilities() : {};
+    const settings = track?.getSettings ? track.getSettings() : {};
+
+    let measuredFps = Math.round(settings.frameRate ?? 0) || 0;
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.muted = true;
+    video.playsInline = true;
+
+    try {
+      await video.play();
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        let frames = 0;
+        let start = null;
+        let last = null;
+        await new Promise((resolve) => {
+          const step = (now) => {
+            frames += 1;
+            if (!start) start = now;
+            last = now;
+            if (now - start >= 300) {
+              resolve();
+              return;
+            }
+            video.requestVideoFrameCallback(step);
+          };
+          video.requestVideoFrameCallback(step);
+        });
+        const elapsedMs = Math.max((last ?? start ?? performance.now()) - (start ?? performance.now()), 1);
+        const elapsed = elapsedMs / 1000;
+        measuredFps = Math.max(1, Math.round(frames / elapsed));
+      }
+    } catch (error) {
+      console.warn('Unable to measure FPS for device:', device.deviceId, error);
+    } finally {
+      stream.getTracks().forEach(trackItem => trackItem.stop());
+      video.srcObject = null;
+      video.remove();
+    }
+
+    const widthCap = capabilities.width?.max ?? settings.width ?? 0;
+    const heightCap = capabilities.height?.max ?? settings.height ?? 0;
+    const zoomCap = capabilities.zoom;
+    const focusCap = capabilities.focusMode ?? capabilities.focusModes ?? [];
+
+    const hasZoom = typeof zoomCap === 'number'
+      ? zoomCap > 0
+      : zoomCap && typeof zoomCap === 'object'
+        ? ((zoomCap.max ?? 0) - (zoomCap.min ?? 0)) > 0
+        : false;
+
+    const focusModes = Array.isArray(focusCap)
+      ? focusCap
+      : typeof focusCap === 'string'
+        ? [focusCap]
+        : [];
+
+    const hasContinuousAf = focusModes.some(mode => /continuous/i.test(mode));
+    const fpsBonus = measuredFps >= 60 ? 300000 : measuredFps >= 30 ? 150000 : 0;
+    const zoomBonus = hasZoom ? 20000 : 0;
+    const torchBonus = capabilities.torch ? 20000 : 0;
+    const focusBonus = hasContinuousAf ? 10000 : 0;
+
+    const score = (widthCap * heightCap) + fpsBonus + zoomBonus + torchBonus + focusBonus;
+    const label = device.label || settings.label || `Camera ${device.deviceId?.slice(-4) ?? ''}`;
+
+    return {
+      deviceId: device.deviceId,
+      groupId: device.groupId,
+      label,
+      maxW: widthCap,
+      maxH: heightCap,
+      fps: measuredFps,
+      hasTorch: !!capabilities.torch,
+      hasZoom,
+      focus: focusModes,
+      score,
+    };
+  };
+
+  const renderCameraDiag = (frontResults, backResults) => {
+    const renderList = (container, results, emptyMessage) => {
+      if (!container) return;
+      container.innerHTML = '';
+      if (!Array.isArray(results) || results.length === 0) {
+        const message = document.createElement('div');
+        message.className = 'diag-message';
+        message.textContent = emptyMessage;
+        container.appendChild(message);
+        return;
+      }
+
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      ['Label', 'MaxRes', 'FPS', 'Torch', 'Zoom', 'AF', 'Score'].forEach((heading) => {
+        const th = document.createElement('th');
+        th.textContent = heading;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      results.forEach((entry, index) => {
+        const row = document.createElement('tr');
+        if (index === 0) {
+          row.classList.add('highlight');
+        }
+        row.dataset.deviceId = entry.deviceId ?? '';
+
+        const cells = [
+          entry.label || '(no label)',
+          entry.maxW && entry.maxH ? `${entry.maxW}×${entry.maxH}` : '—',
+          entry.fps ? String(entry.fps) : '—',
+          entry.hasTorch ? '✓' : '—',
+          entry.hasZoom ? '✓' : '—',
+          entry.focus?.some(mode => /continuous/i.test(mode))
+            ? 'continuous'
+            : Array.isArray(entry.focus) && entry.focus.length
+              ? entry.focus.join(', ')
+              : '—',
+          (entry.score ?? 0).toLocaleString(),
+        ];
+
+        cells.forEach((value) => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.appendChild(cell);
+        });
+
+        tbody.appendChild(row);
+      });
+      table.appendChild(tbody);
+      container.appendChild(table);
+    };
+
+    renderList(frontListEl, frontResults, 'No front-facing cameras detected.');
+    renderList(backListEl, backResults, 'No rear cameras detected.');
+
+    const topFront = frontResults[0] ?? null;
+    const topBack = backResults[0] ?? null;
+
+    if (bestFrontEl) {
+      if (topFront) {
+        bestFrontEl.textContent = topFront.deviceId ?? 'Unknown';
+        bestFrontEl.dataset.deviceId = topFront.deviceId ?? '';
+        bestFrontEl.title = topFront.label ?? topFront.deviceId ?? '';
+      } else {
+        bestFrontEl.textContent = 'None';
+        bestFrontEl.dataset.deviceId = '';
+        bestFrontEl.title = '';
+      }
+    }
+
+    if (bestBackEl) {
+      if (topBack) {
+        bestBackEl.textContent = topBack.deviceId ?? 'Unknown';
+        bestBackEl.dataset.deviceId = topBack.deviceId ?? '';
+        bestBackEl.title = topBack.label ?? topBack.deviceId ?? '';
+      } else {
+        bestBackEl.textContent = 'None';
+        bestBackEl.dataset.deviceId = '';
+        bestBackEl.title = '';
+      }
+    }
+  };
+
+  const runCameraRanking = async () => {
+    if (!navigator?.mediaDevices?.enumerateDevices) {
+      throw new Error('MediaDevices API unavailable.');
+    }
+
+    await bootstrapLabelsOnce();
+
+    const allDevices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'videoinput');
+    const uniqueDevices = dedupeByGroupId(allDevices);
+
+    const frontCandidates = uniqueDevices.filter(device => isFront(device.label));
+    const backCandidates = uniqueDevices.filter(device => isBack(device.label));
+    const fallbackCandidates = uniqueDevices.filter(device => !isFront(device.label) && !isBack(device.label));
+
+    if (!backCandidates.length && fallbackCandidates.length) {
+      backCandidates.push(fallbackCandidates[0]);
+    }
+    if (!frontCandidates.length && fallbackCandidates.length) {
+      const fallbackFront = fallbackCandidates.length > 1 ? fallbackCandidates[1] : fallbackCandidates[0];
+      frontCandidates.push(fallbackFront);
+    }
+
+    const baseConstraints = {
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      frameRate: { ideal: 30 },
+    };
+
+    const probeSafely = async (device) => {
+      try {
+        return await probeDeviceOnce(device, baseConstraints);
+      } catch (error) {
+        console.warn('Camera probe failed:', device.deviceId, error);
+        return null;
+      }
+    };
+
+    const frontResults = [];
+    for (const device of frontCandidates) {
+      const result = await probeSafely(device);
+      if (result) {
+        frontResults.push(result);
+      }
+    }
+
+    const backResults = [];
+    for (const device of backCandidates) {
+      const result = await probeSafely(device);
+      if (result) {
+        backResults.push(result);
+      }
+    }
+
+    frontResults.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    backResults.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+    return { frontResults, backResults };
+  };
+
+  const buildCameraRanking = async ({ updateUi = false, force = false } = {}) => {
+    if (!navigator?.mediaDevices) {
+      if (updateUi) {
+        setCameraDiagStatusMessage('Camera APIs are unavailable in this browser.', 'error');
+        if (frontListEl) frontListEl.innerHTML = '<div class="diag-message">Camera API unavailable.</div>';
+        if (backListEl) backListEl.innerHTML = '<div class="diag-message">Camera API unavailable.</div>';
+      }
+      return { frontResults: [], backResults: [] };
+    }
+
+    const recentlyUpdated = cameraRankingState.lastRunAt && (Date.now() - cameraRankingState.lastRunAt < 60000);
+    if (!force && recentlyUpdated && !cameraRankingPromise) {
+      if (updateUi) {
+        renderCameraDiag(cameraRankingState.front, cameraRankingState.back);
+        const timestamp = new Date(cameraRankingState.lastRunAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setCameraDiagStatusMessage(`Diagnostics last updated at ${timestamp}.`, 'info');
+      }
+      updateCameraDiagSummary();
+      return { frontResults: cameraRankingState.front, backResults: cameraRankingState.back };
+    }
+
+    if (cameraRankingPromise && !force) {
+      try {
+        const existing = await cameraRankingPromise;
+        if (updateUi) {
+          renderCameraDiag(existing.frontResults, existing.backResults);
+        }
+        return existing;
+      } catch (error) {
+        if (updateUi) {
+          setCameraDiagStatusMessage(error.message ?? 'Diagnostics failed.', 'error');
+        }
+        throw error;
+      }
+    }
+
+    if (updateUi) {
+      setCameraDiagStatusMessage('Probing cameras…', 'info');
+      setDiagListsLoading();
+    }
+
+    cameraRankingPromise = (async () => {
+      try {
+        const { frontResults, backResults } = await runCameraRanking();
+        cameraRankingState.front = frontResults;
+        cameraRankingState.back = backResults;
+        cameraRankingState.lastRunAt = Date.now();
+        cameraRankingState.lastError = null;
+
+        if (updateUi) {
+          renderCameraDiag(frontResults, backResults);
+          const timestamp = new Date(cameraRankingState.lastRunAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          setCameraDiagStatusMessage(`Diagnostics updated at ${timestamp}.`, 'success');
+        }
+
+        updateCameraDiagSummary();
+        return { frontResults, backResults };
+      } catch (error) {
+        cameraRankingState.front = [];
+        cameraRankingState.back = [];
+        cameraRankingState.lastError = error;
+        if (updateUi) {
+          setCameraDiagStatusMessage(error.message ?? 'Diagnostics failed.', 'error');
+          if (frontListEl) {
+            frontListEl.innerHTML = '<div class="diag-message">Unable to gather front camera diagnostics.</div>';
+          }
+          if (backListEl) {
+            backListEl.innerHTML = '<div class="diag-message">Unable to gather rear camera diagnostics.</div>';
+          }
+          if (bestFrontEl) {
+            bestFrontEl.textContent = 'None';
+            bestFrontEl.dataset.deviceId = '';
+            bestFrontEl.title = '';
+          }
+          if (bestBackEl) {
+            bestBackEl.textContent = 'None';
+            bestBackEl.dataset.deviceId = '';
+            bestBackEl.title = '';
+          }
+        }
+        updateCameraDiagSummary();
+        throw error;
+      } finally {
+        cameraRankingPromise = null;
+      }
+    })();
+
+    return cameraRankingPromise;
+  };
+
+  const ensureCameraRanking = async (options = {}) => {
+    try {
+      await buildCameraRanking(options);
+    } catch (error) {
+      console.warn('Camera diagnostics unavailable:', error);
+    }
+  };
+
+  const applyDualRecommendations = async () => {
+    if (videoComposer?.setDualPreferences) {
+      await ensureCameraRanking({ updateUi: cameraDiagVisible });
+      const bestBackId = typeof window.pickBestBackCameraDeviceId === 'function'
+        ? window.pickBestBackCameraDeviceId()
+        : null;
+      const bestFrontId = typeof window.pickBestFrontCameraDeviceId === 'function'
+        ? window.pickBestFrontCameraDeviceId()
+        : null;
+      if (bestBackId || bestFrontId) {
+        const currentPrefs = videoComposer.getDualPreferences?.() ?? {};
+        videoComposer.setDualPreferences({
+          backDeviceId: bestBackId ?? currentPrefs.backDeviceId ?? null,
+          frontDeviceId: bestFrontId ?? currentPrefs.frontDeviceId ?? null,
+        });
+      }
+    }
+  };
+
+  const showCameraDiagPanel = async () => {
+    if (!cameraDiagPanel) return;
+    cameraDiagVisible = true;
+    cameraDiagPanel.classList.remove('hidden');
+    cameraDiagPanel.setAttribute('aria-hidden', 'false');
+    await ensureCameraRanking({ updateUi: true });
+  };
+
+  const hideCameraDiagPanel = () => {
+    if (!cameraDiagPanel) return;
+    cameraDiagVisible = false;
+    cameraDiagPanel.classList.add('hidden');
+    cameraDiagPanel.setAttribute('aria-hidden', 'true');
+  };
+
+  if (cameraDiagToggle) {
+    cameraDiagToggle.addEventListener('click', debounce(async () => {
+      if (cameraDiagVisible) {
+        hideCameraDiagPanel();
+      } else {
+        if (cameraDiagSummary) {
+          cameraDiagSummary.textContent = 'Scanning…';
+        }
+        await showCameraDiagPanel();
+      }
+    }, 220));
+  }
+
+  if (cameraDiagClose) {
+    cameraDiagClose.addEventListener('click', () => {
+      hideCameraDiagPanel();
+    });
+  }
+
+  if (cameraDiagRefresh) {
+    cameraDiagRefresh.addEventListener('click', debounce(async () => {
+      if (cameraDiagSummary) {
+        cameraDiagSummary.textContent = 'Refreshing…';
+      }
+      await ensureCameraRanking({ updateUi: cameraDiagVisible, force: true });
+    }, 320));
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (!cameraDiagVisible) return;
+    if (event.key === 'Escape') {
+      hideCameraDiagPanel();
+    }
+  });
 
   const clearCameraStatusTimer = () => {
     if (cameraStatusTimeout) {
@@ -611,6 +1134,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       return false;
     }
 
+    await ensureCameraRanking({ updateUi: cameraDiagVisible });
+
     let candidates;
     try {
       candidates = await videoComposer.getDualDeviceCandidates();
@@ -623,6 +1148,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const suggestedBack = candidates?.back ?? null;
     const suggestedFront = candidates?.front ?? null;
     const preferred = videoComposer.getDualPreferences?.() ?? {};
+    const recommendedBackId = typeof window.pickBestBackCameraDeviceId === 'function'
+      ? window.pickBestBackCameraDeviceId()
+      : null;
+    const recommendedFrontId = typeof window.pickBestFrontCameraDeviceId === 'function'
+      ? window.pickBestFrontCameraDeviceId()
+      : null;
 
     const FRONT_LABEL_KEYWORDS = ['front', 'user', 'selfie', 'facing front', 'front camera'];
     const BACK_LABEL_KEYWORDS = ['back', 'rear', 'environment', 'facing back', 'rear camera'];
@@ -687,8 +1218,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       return annotatedDevices[0]?.device?.deviceId ?? null;
     };
 
-    let defaultBackId = preferred.backDeviceId ?? suggestedBack?.deviceId ?? null;
-    let defaultFrontId = preferred.frontDeviceId ?? suggestedFront?.deviceId ?? null;
+    let defaultBackId = preferred.backDeviceId ?? suggestedBack?.deviceId ?? recommendedBackId ?? null;
+    let defaultFrontId = preferred.frontDeviceId ?? suggestedFront?.deviceId ?? recommendedFrontId ?? null;
 
     defaultBackId = ensureAvailableId(defaultBackId, 'back')
       ?? backDevices[0]?.device?.deviceId
@@ -700,17 +1231,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       ?? annotatedDevices.find(item => item.device.deviceId !== defaultBackId)?.device?.deviceId
       ?? annotatedDevices[0].device.deviceId;
 
-  settingsModalTitle.textContent = 'Select Dual Cameras';
-  settingsModalContent.innerHTML = '';
-  settingsModalContent.classList.add('flex', 'flex-col', 'max-h-[80vh]', 'overflow-hidden');
+    settingsModalTitle.textContent = 'Select Dual Cameras';
+    settingsModalContent.innerHTML = '';
+    settingsModalContent.classList.add('flex', 'flex-col', 'max-h-[80vh]', 'overflow-hidden');
 
-  const instructions = document.createElement('p');
-  instructions.className = 'text-sm text-white/80 mb-3 flex-shrink-0';
+    const instructions = document.createElement('p');
+    instructions.className = 'text-sm text-white/80 mb-3 flex-shrink-0';
     instructions.textContent = 'Choose which physical cameras feed the rear and front views. Dual recording will restart using your selections.';
     settingsModalContent.appendChild(instructions);
 
-  const form = document.createElement('form');
-  form.className = 'flex flex-col gap-4 flex-1 min-h-0';
+    const form = document.createElement('form');
+    form.className = 'flex flex-col gap-4 flex-1 min-h-0';
     settingsModalContent.appendChild(form);
 
     const selectionState = {
@@ -752,6 +1283,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           return;
         }
         seen.add(key);
+
         const optionId = `${name}-${index}`;
         const wrapper = document.createElement('label');
         wrapper.className = 'flex items-center gap-3 rounded-md border border-white/10 px-3 py-2 cursor-pointer transition hover:border-brand focus-within:border-brand';
@@ -778,15 +1310,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           validateSelections();
         });
 
-    const textContainer = document.createElement('div');
-    textContainer.className = 'flex flex-col';
+        const textContainer = document.createElement('div');
+        textContainer.className = 'flex flex-col';
 
-    const primaryLabel = document.createElement('span');
-    primaryLabel.className = 'text-sm text-white';
-    primaryLabel.textContent = device.label || `Camera ${index + 1}`;
-    textContainer.appendChild(primaryLabel);
+        const primaryLabel = document.createElement('span');
+        primaryLabel.className = 'text-sm text-white';
+        primaryLabel.textContent = device.label || `Camera ${index + 1}`;
+        textContainer.appendChild(primaryLabel);
 
-    const facingHint = facingDescription(item);
+        const facingHint = facingDescription(item);
         if (facingHint) {
           const secondary = document.createElement('span');
           secondary.className = 'text-xs text-white/60';
@@ -839,8 +1371,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     contentWrapper.className = 'flex-1 overflow-y-auto pr-2 space-y-6 min-h-0';
     form.appendChild(contentWrapper);
 
-    const backFieldset = buildFieldset('backCamera', 'Back camera (rear view)', 'Pick the camera pointed at the road.', sortedForBack, defaultBackId);
-    const frontFieldset = buildFieldset('frontCamera', 'Front camera (self view)', 'Pick the camera facing you.', sortedForFront, defaultFrontId);
+    const backFieldset = buildFieldset('backCamera', 'Back camera (rear view)', 'Pick the camera pointed at the road.', sortedForBack, recommendedBackId);
+    const frontFieldset = buildFieldset('frontCamera', 'Front camera (self view)', 'Pick the camera facing you.', sortedForFront, recommendedFrontId);
 
     contentWrapper.appendChild(backFieldset);
     contentWrapper.appendChild(frontFieldset);
@@ -1319,6 +1851,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const startCamera = async ({ initial = false } = {}) => {
     showCameraStatus('Preparing camera', 'Checking available cameras and starting preview…', { variant: 'info' });
     setStartButtonEnabled(false);
+
+    if (videoComposer.state.captureMode === 'dual') {
+      await applyDualRecommendations();
+    }
 
     const result = await videoComposer.setCaptureMode(videoComposer.state.captureMode, { forceRestart: true });
 
