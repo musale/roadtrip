@@ -478,11 +478,28 @@ class VideoComposer {
 
     // Draw mute indicator if muted
     if (this.isMuted) {
-      ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
+      const text = 'MUTED';
       ctx.font = 'bold 22px Arial';
-      ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText('MUTED', 10, 10);
+      ctx.textAlign = 'left';
+
+      const textMetrics = ctx.measureText(text);
+      const textWidth = textMetrics.width;
+      const textHeight = 22; // Approximation based on font size
+      const padding = 5;
+
+      // Draw background rectangle for better visibility
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'; // Semi-transparent black
+      ctx.fillRect(
+        10 - padding,
+        10 - padding,
+        textWidth + (padding * 2),
+        textHeight + (padding * 2)
+      );
+
+      // Draw text
+      ctx.fillStyle = 'rgba(255, 20, 20, 0.95)'; // Bright, nearly-opaque red
+      ctx.fillText(text, 10, 10);
     }
   }
 }
