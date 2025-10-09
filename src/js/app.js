@@ -160,17 +160,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const handleRecordingControlsInteraction = (event) => {
+    if (!recordingControls) return;
+    const activeRecording = isRecording && !isPaused;
     if (!isRecording) return;
     if (event.type === 'pointermove' && !controlsAreHidden) {
       return;
     }
     showRecordingControls();
-    scheduleControlAutoHide(true);
+    if (activeRecording) {
+      scheduleControlAutoHide(true);
+    } else {
+      clearControlHideTimeout();
+    }
   };
 
   window.addEventListener('pointerdown', handleRecordingControlsInteraction, { passive: true });
   window.addEventListener('pointermove', handleRecordingControlsInteraction, { passive: true });
   window.addEventListener('touchstart', handleRecordingControlsInteraction, { passive: true });
+  window.addEventListener('click', handleRecordingControlsInteraction, { passive: true });
   window.addEventListener('keydown', handleRecordingControlsInteraction);
 
   // --- Orientation Handling ---
@@ -223,6 +230,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await request.call(fullscreenTarget);
       recordingFullscreenRequested = true;
+      showRecordingControls();
+      scheduleControlAutoHide(true);
     } catch (error) {
       recordingFullscreenRequested = false;
       console.warn('Could not enter fullscreen for recording:', error);
@@ -253,8 +262,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const handleFullscreenChange = () => {
-    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    const fullscreenActive = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if (!fullscreenActive) {
       recordingFullscreenRequested = false;
+      return;
+    }
+    if (isRecording) {
+      showRecordingControls();
+      scheduleControlAutoHide(true);
     }
   };
 
@@ -270,6 +285,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         hideNudge();
       } else {
         showNudge(); // Re-check if nudge should be shown (e.g., if recording)
+      }
+      if (isRecording) {
+        showRecordingControls();
+        scheduleControlAutoHide(true);
       }
       syncDualPreviewLayout();
     }, 100); // Debounce to prevent flicker
