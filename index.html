@@ -73,16 +73,10 @@
           </button>
           <div id="settingsMenu"
             class="hidden absolute right-0 top-full mt-2 w-56 bg-surface/95 border border-brand/30 rounded-lg shadow-neon text-sm text-white backdrop-blur z-50 overflow-hidden">
-            <div class="settings-item flex items-center justify-between gap-4">
-              <label for="driveTypeSelector" class="flex-shrink-0 text-white/80">Drive Type</label>
-              <select id="driveTypeSelector" name="driveType" class="w-full max-w-[10rem] text-right bg-transparent border-none appearance-none focus:ring-0 text-xs uppercase tracking-wide text-white/50 pr-6" style="background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20"><path stroke="%236b7280" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 8l4 4 4-4"/></svg>'); background-position: right -0.25rem center; background-repeat: no-repeat; background-size: 1.5em 1.5em;">
-                <option>Long Drive</option>
-                <option>Short Drive</option>
-                <option>Commute</option>
-                <option>Errand</option>
-                <option>Off-road</option>
-              </select>
-            </div>
+            <button id="driveTypeButton" class="settings-item flex items-center justify-between gap-4">
+              <span>Drive Type</span>
+              <span id="currentDriveType" class="text-xs uppercase tracking-wide text-white/50"></span>
+            </button>
             <button id="captureSettingsButton" class="settings-item flex items-center justify-between gap-4 border-t border-white/10">
               <span>Capture Mode</span>
               <span id="currentCaptureSetting" class="text-xs uppercase tracking-wide text-white/50"></span>
