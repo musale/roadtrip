@@ -59,6 +59,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const replayVideoPlayer = document.getElementById('replayVideoPlayer');
   const closeVideoPlayer = document.getElementById('closeVideoPlayer');
 
+  // Landscape nudge elements
+  const landscapeNudge = document.getElementById('landscapeNudge');
+  const dismissNudge = document.getElementById('dismissNudge');
+  let nudgeDismissed = false;
+
   // Placeholder for mapContainer if needed later, currently hidden
   const mapContainer = document.createElement('div');
   mapContainer.id = 'mapContainer';
@@ -79,6 +84,44 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentMode = 'camera'; // 'camera' or 'map'
   let isRecording = false;
   let wakeLock = null;
+
+  // --- Orientation Handling ---
+  const isLandscape = () => window.matchMedia("(orientation: landscape)").matches || window.innerWidth > window.innerHeight;
+
+  const showNudge = () => {
+    // Show nudge only if recording, not dismissed, and in portrait.
+    if (isRecording && !nudgeDismissed && !isLandscape()) {
+      landscapeNudge.classList.remove('hidden');
+    }
+  };
+
+  const hideNudge = () => {
+    landscapeNudge.classList.add('hidden');
+  };
+
+  const preferLandscape = async () => {
+    if (screen.orientation && screen.orientation.lock) {
+      try {
+        await screen.orientation.lock('landscape');
+      } catch (error) {
+        // This is expected on devices that don't support it or when the user denies it.
+        console.warn('Could not lock screen orientation:', error);
+      }
+    }
+  };
+
+  // Debounced handler for orientation changes
+  let orientationTimeout;
+  const handleOrientationChange = () => {
+    clearTimeout(orientationTimeout);
+    orientationTimeout = setTimeout(() => {
+      if (isLandscape()) {
+        hideNudge();
+      } else {
+        showNudge(); // Re-check if nudge should be shown (e.g., if recording)
+      }
+    }, 100); // Debounce to prevent flicker
+  };
 
   // UI Update Functions
   const updateUI = () => {
