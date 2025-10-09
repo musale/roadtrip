@@ -6,6 +6,7 @@
   <link rel="icon" type="image/svg+xml" href="/vite.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RoadTrip</title>
+  <link href='https://unpkg.com/maplibre-gl@^4/dist/maplibre-gl.css' rel='stylesheet' />
 
 </head>
 
@@ -163,6 +164,24 @@
       <div class="relative bg-surface p-4 rounded-lg shadow-neon">
         <button id="closeVideoPlayer" class="absolute top-2 right-2 text-brand text-xl font-bold">X</button>
         <video id="replayVideoPlayer" controls class="w-[80vw] h-[80vh] max-w-4xl max-h-2xl"></video>
+      </div>
+    </div>
+
+    <!-- Trip Summary Overlay (initially hidden) -->
+    <div id="tripSummaryOverlay" class="hidden fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-40">
+      <div class="bg-surface p-4 md:p-6 rounded-lg shadow-neon text-brand font-body w-11/12 max-w-2xl relative">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-heading">Trip Summary</h2>
+          <button id="tripSummaryClose"
+            class="bg-brand text-black p-2 rounded-full font-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">X</button>
+        </div>
+        <div class="space-y-4">
+          <div id="tripSummaryMap" class="card bg-black/30 rounded-lg" style="height:300px"></div>
+          <div id="tripStats" class="text-sm md:text-base grid grid-cols-3 gap-4 text-center"></div>
+          <div class="flex justify-center">
+            <canvas id="elevationProfile" width="300" height="100" class="hidden rounded-lg bg-black/20"></canvas>
+          </div>
+        </div>
       </div>
     </div>
 

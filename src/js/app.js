@@ -1,6 +1,7 @@
 // src/js/app.js
 
 import '../css/styles.css';
+import maplibregl from 'maplibre-gl';
 import TripRecorder from './TripRecorder.js';
 import LiveHUD from './LiveHUD.js';
 import VideoComposer from './VideoComposer.js';
@@ -58,6 +59,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const videoPlayerOverlay = document.getElementById('videoPlayerOverlay');
   const replayVideoPlayer = document.getElementById('replayVideoPlayer');
   const closeVideoPlayer = document.getElementById('closeVideoPlayer');
+
+  // Trip Summary elements
+  const tripSummaryOverlay = document.getElementById('tripSummaryOverlay');
+  const tripSummaryClose = document.getElementById('tripSummaryClose');
+  const tripSummaryMap = document.getElementById('tripSummaryMap');
+  const tripStats = document.getElementById('tripStats');
+  const elevationProfile = document.getElementById('elevationProfile');
+  let summaryMap = null; // To hold the map instance
+
 
   // Landscape nudge elements
   const landscapeNudge = document.getElementById('landscapeNudge');
@@ -553,6 +563,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const finalVideoBlob = await videoComposer.stopRecording();
+    let savedTrip;
     if (finalVideoBlob) {
       console.log('Final video blob created, size:', finalVideoBlob.size, 'type:', finalVideoBlob.type);
       const videoFilename = `roadtrip-${Date.now()}.mp4`;
@@ -560,15 +571,190 @@ document.addEventListener('DOMContentLoaded', async () => {
         await writeVideoToOpfs(videoFilename, finalVideoBlob);
         console.log('Final video successfully saved to OPFS:', videoFilename);
         await clearVideoChunks();
-        await tripRecorder.stopTrip({ videoFilename });
+        savedTrip = await tripRecorder.stopTrip({ videoFilename });
       } catch (error) {
         console.error('Error saving final video to OPFS:', error);
+        savedTrip = await tripRecorder.stopTrip();
       }
     } else {
       console.warn('No final video blob to save.');
       await clearVideoChunks();
-      await tripRecorder.stopTrip();
+      savedTrip = await tripRecorder.stopTrip();
     }
+
+    if (savedTrip) {
+      showTripSummary(savedTrip);
+    }
+  };
+
+  // --- Trip Summary Functions ---
+
+  const hideTripSummary = () => {
+    tripSummaryOverlay.classList.add('hidden');
+    if (summaryMap) {
+      summaryMap.remove();
+      summaryMap = null;
+    }
+    // Reset stats and canvas
+    tripStats.innerHTML = '';
+    elevationProfile.classList.add('hidden');
+    const ctx = elevationProfile.getContext('2d');
+    ctx.clearRect(0, 0, elevationProfile.width, elevationProfile.height);
+  };
+
+  const drawElevationProfile = (elevations) => {
+    const canvas = elevationProfile;
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const padding = 10;
+
+    const validElevations = elevations.filter(e => e !== null && e !== undefined);
+    if (validElevations.length < 2) {
+      elevationProfile.classList.add('hidden');
+      return;
+    }
+
+    elevationProfile.classList.remove('hidden');
+    ctx.clearRect(0, 0, width, height);
+
+    const minEle = Math.min(...validElevations);
+    const maxEle = Math.max(...validElevations);
+    const eleRange = maxEle - minEle;
+
+    const getX = (index) => (index / (validElevations.length - 1)) * (width - 2 * padding) + padding;
+    const getY = (ele) => height - (((ele - minEle) / eleRange) * (height - 2 * padding) + padding);
+
+    // Draw profile line
+    ctx.beginPath();
+    ctx.moveTo(getX(0), getY(validElevations[0]));
+    validElevations.forEach((ele, index) => {
+      ctx.lineTo(getX(index), getY(ele));
+    });
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#0ea5e9';
+    ctx.stroke();
+
+    // Draw min/max labels
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = 'white';
+    ctx.fillText(`${minEle.toFixed(0)}m`, 5, height - 5);
+    ctx.fillText(`${maxEle.toFixed(0)}m`, 5, 15);
+  };
+
+  const showTripSummary = (trip) => {
+    if (!trip || !trip.points || trip.points.length < 2) {
+      alert('Trip is too short to display a summary.');
+      return;
+    }
+
+    // 1. Prepare data
+    const coords = trip.points.map(p => [p.lon, p.lat]);
+    const elevations = trip.points.map(p => p.alt).filter(alt => alt !== null && alt !== undefined);
+    const hasElevation = elevations.length === coords.length;
+
+    const geojson = {
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: coords
+      },
+      properties: {
+        ...(hasElevation && { elevations })
+      }
+    };
+
+    // 2. Display Stats
+    const { value: distValue, unit: distUnit } = getDistanceDisplay(trip.stats.distanceM);
+    const { value: avgSpeedValue, unit: speedUnit } = getSpeedDisplay(trip.stats.avgKph);
+    tripStats.innerHTML = `
+      <div>
+        <div class="text-xs text-white/60">Distance</div>
+        <div class="text-lg font-bold">${distValue} ${distUnit}</div>
+      </div>
+      <div>
+        <div class="text-xs text-white/60">Duration</div>
+        <div class="text-lg font-bold">${formatDuration(trip.stats.durationMs)}</div>
+      </div>
+      <div>
+        <div class="text-xs text-white/60">Avg Speed</div>
+        <div class="text-lg font-bold">${avgSpeedValue} ${speedUnit}</div>
+      </div>
+    `;
+
+    // 3. Display Elevation Profile
+    if (hasElevation) {
+      drawElevationProfile(elevations);
+    } else {
+      elevationProfile.classList.add('hidden');
+    }
+
+    // 4. Show Overlay
+    tripSummaryOverlay.classList.remove('hidden');
+
+    // 5. Render Map
+    if (summaryMap) summaryMap.remove();
+    summaryMap = new maplibregl.Map({
+      container: 'tripSummaryMap',
+      style: 'https://api.maptiler.com/maps/streets/style.json?key=YOUR_MAPTILER_API_KEY', // Replace with your key
+      center: coords[0],
+      zoom: 12,
+      attributionControl: false
+    });
+
+    summaryMap.on('load', () => {
+      summaryMap.addSource('route', { type: 'geojson', data: geojson });
+
+      summaryMap.addLayer({
+        id: 'route-line',
+        type: 'line',
+        source: 'route',
+        paint: { 'line-color': '#0ea5e9', 'line-width': 4, 'line-opacity': 0.8 }
+      });
+
+      const startPoint = { type: 'Feature', geometry: { type: 'Point', coordinates: coords[0] }, properties: { kind: 'start' } };
+      const endPoint = { type: 'Feature', geometry: { type: 'Point', coordinates: coords[coords.length - 1] }, properties: { kind: 'end' } };
+
+      summaryMap.addSource('route-points', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [startPoint, endPoint] }
+      });
+
+      summaryMap.addLayer({
+        id: 'route-points-circles',
+        type: 'circle',
+        source: 'route-points',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': ['match', ['get', 'kind'], 'start', '#10b981', 'end', '#ef4444', '#ccc'],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff'
+        }
+      });
+
+      summaryMap.addLayer({
+        id: 'route-start-label',
+        type: 'symbol',
+        source: 'route-points',
+        filter: ['==', ['get', 'kind'], 'start'],
+        layout: { 'text-field': 'A', 'text-font': ['Open Sans Bold'], 'text-size': 12, 'text-offset': [0, 0.1] },
+        paint: { 'text-color': '#fff' }
+      });
+
+      summaryMap.addLayer({
+        id: 'route-end-label',
+        type: 'symbol',
+        source: 'route-points',
+        filter: ['==', ['get', 'kind'], 'end'],
+        layout: { 'text-field': 'B', 'text-font': ['Open Sans Bold'], 'text-size': 12, 'text-offset': [0, 0.1] },
+        paint: { 'text-color': '#fff' }
+      });
+
+
+      const bounds = new maplibregl.LngLatBounds();
+      coords.forEach(coord => bounds.extend(coord));
+      summaryMap.fitBounds(bounds, { padding: 40, maxZoom: 16, duration: 0 });
+    });
   };
 
   // Event Listeners
@@ -692,6 +878,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   pastTripsButton.addEventListener('click', showPastTripsOverlay);
+
+  tripSummaryClose.addEventListener('click', hideTripSummary);
+  tripSummaryOverlay.addEventListener('click', (event) => {
+    if (event.target === tripSummaryOverlay) {
+      hideTripSummary();
+    }
+  });
 
   // Event listeners for the modal buttons directly
   btnSingle.addEventListener('click', async () => {
