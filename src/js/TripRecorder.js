@@ -4,6 +4,27 @@ import { addTrip } from './storage/db.js';
 
 const HAVERSINE_RADIUS_KM = 6371;
 
+/**
+ * Escapes special characters in a string for use in XML content.
+ * @param {string} unsafe The string to escape.
+ * @returns {string} The escaped string.
+ */
+function escapeXml(unsafe) {
+  if (typeof unsafe !== 'string') {
+    return '';
+  }
+  return unsafe.replace(/[<>&'"]/g, function (c) {
+    switch (c) {
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '&': return '&amp;';
+      case "'": return '&apos;';
+      case '"': return '&quot;';
+    }
+  });
+}
+
+
 class TripRecorder {
   constructor() {
     this.currentTrip = null;
@@ -18,7 +39,22 @@ class TripRecorder {
     this.lastPosition = null;
     this.speedReadings = [];
     this.maxSpeedKph = 0;
+    this.driveType = 'Long Drive'; // Default drive type
   }
+
+  /**
+   * Sets the drive type for the current or next trip.
+   * @param {string} type The selected drive type (e.g., 'Long Drive', 'Commute').
+   */
+  setDriveType(type) {
+    this.driveType = type;
+    // If a trip is already in progress, update its driveType
+    if (this.currentTrip) {
+      this.currentTrip.driveType = type;
+    }
+    console.log(`Drive type set to: ${type}`);
+  }
+
 
   startTrip() {
     if (this.watchId) {
@@ -32,6 +68,7 @@ class TripRecorder {
       endedAt: null,
       points: [],
       videoFilename: null,
+      driveType: this.driveType, // Assign the current drive type to the new trip
       stats: {
         distanceM: 0,
         durationMs: 0,
@@ -81,6 +118,12 @@ class TripRecorder {
     this.currentTrip.stats.movingTime = this.movingTime;
     this.currentTrip.stats.avgKph = this.distanceM > 0 ? (this.distanceM / 1000) / (this.movingTime / (1000 * 60 * 60)) : 0;
     this.currentTrip.videoFilename = videoFilename;
+
+    // Silently migrate legacy 'workout' property if present
+    if (this.currentTrip.type === 'workout') {
+      delete this.currentTrip.type;
+    }
+
 
     await addTrip(this.currentTrip);
     console.log("Trip stopped and saved:", this.currentTrip);
@@ -203,19 +246,53 @@ class TripRecorder {
       return null;
     }
 
-    let gpx = '<gpx version="1.1" creator="RoadTrip" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">';
-    gpx += `<trk><name>RoadTrip - ${new Date(trip.startedAt).toLocaleString()}</name><trkseg>`;
+    // For backward compatibility, default to 'Long Drive' if driveType is missing.
+    const driveType = trip.driveType || 'Long Drive';
+    const tripName = `RoadTrip - ${new Date(trip.startedAt).toLocaleString()}`;
+
+    let gpx = `<gpx version="1.1" creator="RoadTrip"
+  xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:rt="https://roadtrip.app/ns"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+`;
+    gpx += `  <trk>
+`;
+    gpx += `    <name>${escapeXml(tripName)}</name>
+`;
+    gpx += `    <type>Drive</type>
+`;
+  gpx += `    <extensions>
+`;
+  gpx += `      <rt:category>${escapeXml(driveType)}</rt:category>
+`;
+    gpx += `    </extensions>
+`;
+    gpx += `    <trkseg>
+`;
 
     trip.points.forEach(p => {
-      gpx += `<trkpt lat="${p.lat}" lon="${p.lon}">`;
-      gpx += `<time>${new Date(p.t).toISOString()}</time>`;
-      if (p.alt !== undefined) gpx += `<ele>${p.alt}</ele>`;
-      if (p.v !== undefined) gpx += `<speed>${p.v / 3.6}</speed>`; // km/h to m/s
-      if (p.hdg !== undefined) gpx += `<course>${p.hdg}</course>`;
-      gpx += `</trkpt>`;
+      gpx += `      <trkpt lat="${p.lat}" lon="${p.lon}">
+`;
+      if (p.alt !== undefined && p.alt !== null) gpx += `        <ele>${p.alt}</ele>
+`;
+      gpx += `        <time>${new Date(p.t).toISOString()}</time>
+`;
+      // GPX spec requires speed in meters/second.
+      if (p.v !== undefined && p.v !== null) gpx += `        <speed>${p.v / 3.6}</speed>
+`;
+      if (p.hdg !== undefined && p.hdg !== null) gpx += `        <course>${p.hdg}</course>
+`;
+      gpx += `      </trkpt>
+`;
     });
 
-    gpx += `</trkseg></trk></gpx>`;
+    gpx += `    </trkseg>
+`;
+    gpx += `  </trk>
+`;
+    gpx += `</gpx>`;
+
     return new Blob([gpx], { type: 'application/gpx+xml' });
   }
 
@@ -238,6 +315,7 @@ class TripRecorder {
             avgKph: trip.stats.avgKph,
             maxKph: trip.stats.maxKph,
             movingTime: trip.stats.movingTime,
+            driveType: trip.driveType || 'Long Drive', // Include driveType in GeoJSON as well
           },
           geometry: {
             type: 'LineString',

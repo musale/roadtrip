@@ -73,7 +73,11 @@
           </button>
           <div id="settingsMenu"
             class="hidden absolute right-0 top-full mt-2 w-56 bg-surface/95 border border-brand/30 rounded-lg shadow-neon text-sm text-white backdrop-blur z-50 overflow-hidden">
-            <button id="captureSettingsButton" class="settings-item flex items-center justify-between gap-4">
+            <button id="driveTypeButton" class="settings-item flex items-center justify-between gap-4">
+              <span>Drive Type</span>
+              <span id="currentDriveType" class="text-xs uppercase tracking-wide text-white/50"></span>
+            </button>
+            <button id="captureSettingsButton" class="settings-item flex items-center justify-between gap-4 border-t border-white/10">
               <span>Capture Mode</span>
               <span id="currentCaptureSetting" class="text-xs uppercase tracking-wide text-white/50"></span>
             </button>

@@ -21,6 +21,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingsButton = document.getElementById('settingsButton');
   const settingsMenu = document.getElementById('settingsMenu');
 
+  const driveTypeButton = document.getElementById('driveTypeButton');
+  const currentDriveType = document.getElementById('currentDriveType');
   const captureSettingsButton = document.getElementById('captureSettingsButton');
   const currentCaptureSetting = document.getElementById('currentCaptureSetting');
   const facingCameraButton = document.getElementById('facingCameraButton');
@@ -79,6 +81,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // UI Update Functions
   const updateUI = () => {
+    currentDriveType.textContent = tripRecorder.driveType;
     currentCaptureSetting.textContent = videoComposer.state.captureMode.charAt(0).toUpperCase() + videoComposer.state.captureMode.slice(1);
     currentFacingSetting.textContent = videoComposer.state.facing.charAt(0).toUpperCase() + videoComposer.state.facing.slice(1);
     currentRecordingModeSetting.textContent = currentMode.charAt(0).toUpperCase() + currentMode.slice(1);
@@ -494,7 +497,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const currentTripData = tripRecorder.getCurrentTrip();
       if (currentTripData && currentTripData.points.length > 0) {
         mapView.fitBoundsToPoints(currentTripData.points);
-      }D
+      }
     }
 
     const finalVideoBlob = await videoComposer.stopRecording();
@@ -539,6 +542,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   settingsModalClose.addEventListener('click', hideModal);
   pastTripsClose.addEventListener('click', hidePastTripsOverlay);
   clearTripsButton.addEventListener('click', handleClearTrips);
+
+  driveTypeButton.addEventListener('click', () => {
+    const driveTypes = ['Long Drive', 'Short Drive', 'Commute', 'Errand', 'Off-road'];
+    showModal(
+      'Drive Type',
+      driveTypes.map(type => ({ label: type, value: type })),
+      tripRecorder.driveType,
+      (selection) => {
+        tripRecorder.setDriveType(selection);
+        updateUI();
+      }
+    );
+  });
 
   closeVideoPlayer.addEventListener('click', () => {
     replayVideoPlayer.pause();
