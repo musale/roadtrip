@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const startStopButton = document.getElementById('startStopButton');
   const muteButton = document.getElementById('muteButton'); // Mute button
   const pauseResumeButton = document.getElementById('pauseResumeButton');
+  const recordingControls = document.getElementById('recordingControls');
   const settingsButton = document.getElementById('settingsButton');
   const settingsMenu = document.getElementById('settingsMenu');
 
@@ -109,6 +110,68 @@ document.addEventListener('DOMContentLoaded', async () => {
   let cameraCapabilities = { cameraCount: 0, hasUserFacing: false, hasEnvironmentFacing: false };
   let cameraReady = false;
   let cameraStatusTimeout = null;
+  const CONTROLS_AUTO_HIDE_MS = 5000;
+  let controlHideTimeoutId = null;
+  let controlsAreHidden = false;
+
+  const clearControlHideTimeout = () => {
+    if (controlHideTimeoutId) {
+      clearTimeout(controlHideTimeoutId);
+      controlHideTimeoutId = null;
+    }
+  };
+
+  const hideRecordingControls = () => {
+    if (!recordingControls) return;
+    recordingControls.classList.add('controls-hidden');
+    controlsAreHidden = true;
+  };
+
+  const showRecordingControls = () => {
+    if (!recordingControls) return;
+    recordingControls.classList.remove('controls-hidden');
+    controlsAreHidden = false;
+  };
+
+  const scheduleControlAutoHide = (restart = false) => {
+    if (!recordingControls) return;
+    if (!isRecording || isPaused) return;
+    if (restart && controlHideTimeoutId) {
+      clearTimeout(controlHideTimeoutId);
+      controlHideTimeoutId = null;
+    }
+    if (controlHideTimeoutId) return;
+    controlHideTimeoutId = setTimeout(() => {
+      hideRecordingControls();
+      controlHideTimeoutId = null;
+    }, CONTROLS_AUTO_HIDE_MS);
+  };
+
+  const refreshRecordingControlsVisibility = () => {
+    if (!recordingControls) return;
+    if (!isRecording || isPaused) {
+      clearControlHideTimeout();
+      showRecordingControls();
+      return;
+    }
+    if (!controlsAreHidden) {
+      scheduleControlAutoHide();
+    }
+  };
+
+  const handleRecordingControlsInteraction = (event) => {
+    if (!isRecording) return;
+    if (event.type === 'pointermove' && !controlsAreHidden) {
+      return;
+    }
+    showRecordingControls();
+    scheduleControlAutoHide(true);
+  };
+
+  window.addEventListener('pointerdown', handleRecordingControlsInteraction, { passive: true });
+  window.addEventListener('pointermove', handleRecordingControlsInteraction, { passive: true });
+  window.addEventListener('touchstart', handleRecordingControlsInteraction, { passive: true });
+  window.addEventListener('keydown', handleRecordingControlsInteraction);
 
   // --- Orientation Handling ---
   const isLandscape = () => window.matchMedia("(orientation: landscape)").matches || window.innerWidth > window.innerHeight;
@@ -392,6 +455,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       mapContainer.classList.remove('hidden');
       mapView.init(); // Ensure map is initialized when switching to map mode
     }
+
+    refreshRecordingControlsVisibility();
   };
 
   // Modal Functions
