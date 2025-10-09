@@ -604,9 +604,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const deviceMap = new Map();
     devices.forEach((device) => {
-      const key = device.deviceId && device.deviceId !== 'default'
-        ? device.deviceId
-        : `${device.groupId ?? 'unknown'}::${device.label ?? 'unnamed'}`;
+      const key = device.groupId && device.groupId !== ''
+        ? device.groupId
+        : device.deviceId && device.deviceId !== 'default'
+          ? device.deviceId
+          : `${device.label ?? 'unnamed'}::${device.deviceId ?? 'nodevice'}`;
       const existing = deviceMap.get(key);
       if (!existing || labelConfidence(device.label) > labelConfidence(existing.label)) {
         deviceMap.set(key, device);
@@ -710,7 +712,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const seen = new Set();
       sortedDevices.forEach((item, index) => {
         const { device } = item;
-        const key = device.deviceId ?? `unknown-${index}`;
+        const key = device.groupId && device.groupId !== '' ? device.groupId : device.deviceId ?? `unknown-${index}`;
         if (seen.has(key)) {
           return;
         }
@@ -749,11 +751,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     primaryLabel.textContent = device.label || `Camera ${index + 1}`;
     textContainer.appendChild(primaryLabel);
 
-    const deviceIdLabel = document.createElement('span');
-    deviceIdLabel.className = 'text-[11px] text-white/50 break-all';
-    deviceIdLabel.textContent = `ID: ${device.deviceId}`;
-    textContainer.appendChild(deviceIdLabel);
-
     const facingHint = facingDescription(item);
         if (facingHint) {
           const secondary = document.createElement('span');
@@ -782,7 +779,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       const result = [];
       groups.forEach(group => {
         group.forEach(item => {
-          const key = item.device.deviceId || `${item.device.groupId ?? 'unknown'}::${item.device.label ?? 'unnamed'}`;
+          const key = item.device.groupId && item.device.groupId !== ''
+            ? item.device.groupId
+            : item.device.deviceId || `${item.device.label ?? 'unnamed'}::${item.device.groupId ?? 'unknown'}`;
           if (seen.has(key)) return;
           seen.add(key);
           result.push(item);
@@ -863,33 +862,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const result = await videoComposer.setCaptureMode('dual', { forceRestart: true });
         handleCameraResult(result);
         if (result.success) {
-          if (navigator?.mediaDevices?.enumerateDevices) {
-            try {
-              const rawDevices = await navigator.mediaDevices.enumerateDevices();
-              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-              const dump = rawDevices.map(device => ({
-                kind: device.kind,
-                label: device.label,
-                deviceId: device.deviceId,
-                groupId: device.groupId,
-              }));
-              const blob = new Blob([JSON.stringify({
-                generatedAt: timestamp,
-                selected: {
-                  backDeviceId: selectionState.back,
-                  frontDeviceId: selectionState.front,
-                },
-                devices: dump,
-              }, null, 2)], { type: 'application/json' });
-              const filename = `roadtrip-devices-${timestamp}.json`;
-              downloadBlob(blob, filename);
-            } catch (deviceError) {
-              console.warn('Could not export device inventory:', deviceError);
-              showNotification('Dual cameras set, but exporting device list failed.', { variant: 'warning' });
-            }
-          } else {
-            showNotification('Dual cameras set, but device export is unavailable in this browser.', { variant: 'warning' });
-          }
           updateUI();
           hideModal();
         } else {

@@ -89,6 +89,40 @@ class VideoComposer {
     }
   }
 
+  _labelConfidence(label = '') {
+    const lower = label.toLowerCase();
+    if (!lower) return 0;
+    let score = 0;
+    if (FRONT_LABEL_KEYWORDS.some(keyword => lower.includes(keyword))) score += 2;
+    if (BACK_LABEL_KEYWORDS.some(keyword => lower.includes(keyword))) score += 2;
+    score += Math.min(lower.length, 40) / 5;
+    return score;
+  }
+
+  _dedupeDevicesByGroup(devices) {
+    const seen = new Map();
+    devices.forEach((device) => {
+      const key = device.groupId && device.groupId !== ''
+        ? device.groupId
+        : device.deviceId && device.deviceId !== 'default'
+          ? device.deviceId
+          : `${device.label ?? 'unnamed'}::${device.groupId ?? 'nogroup'}`;
+
+      const existing = seen.get(key);
+      if (!existing) {
+        seen.set(key, device);
+        return;
+      }
+
+      const existingScore = this._labelConfidence(existing.label);
+      const currentScore = this._labelConfidence(device.label);
+      if (currentScore > existingScore) {
+        seen.set(key, device);
+      }
+    });
+    return Array.from(seen.values());
+  }
+
   async refreshCameraInventory() {
     const fallback = {
       cameraCount: 0,
@@ -105,8 +139,9 @@ class VideoComposer {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const cameras = devices.filter(device => device.kind === 'videoinput');
+      const dedupedCameras = this._dedupeDevicesByGroup(cameras);
 
-      const facingFromLabels = cameras.reduce((acc, device) => {
+      const facingFromLabels = dedupedCameras.reduce((acc, device) => {
         const label = device.label?.toLowerCase() ?? '';
         if (label.includes('back') || label.includes('rear') || label.includes('environment')) {
           acc.hasEnvironmentFacing = true;
@@ -119,14 +154,14 @@ class VideoComposer {
 
       const activeFacings = this._collectActiveFacingModes();
 
-      const hasUserFacing = facingFromLabels.hasUserFacing || activeFacings.has('user') || (cameras.length === 1);
-      const hasEnvironmentFacing = facingFromLabels.hasEnvironmentFacing || activeFacings.has('environment') || (cameras.length > 1);
+      const hasUserFacing = facingFromLabels.hasUserFacing || activeFacings.has('user') || (dedupedCameras.length === 1);
+      const hasEnvironmentFacing = facingFromLabels.hasEnvironmentFacing || activeFacings.has('environment') || (dedupedCameras.length > 1);
 
       this.capabilities = {
-        cameraCount: cameras.length,
+        cameraCount: dedupedCameras.length,
         hasUserFacing,
         hasEnvironmentFacing,
-        devices: cameras,
+        devices: dedupedCameras,
       };
     } catch (error) {
       console.warn('Failed to enumerate camera devices:', error);
@@ -219,25 +254,7 @@ class VideoComposer {
       return { devices: [], back: null, front: null };
     }
 
-    const dedupedDevices = new Map();
-    devices.forEach(device => {
-      const key = device.deviceId && device.deviceId !== 'default'
-        ? device.deviceId
-        : `${device.groupId ?? 'unknown'}::${device.label ?? 'unnamed'}`;
-      const existing = dedupedDevices.get(key);
-      const existingLabel = existing?.label?.toLowerCase() ?? '';
-      const currentLabel = device.label?.toLowerCase() ?? '';
-      const preferCurrent = () => {
-        if (!existingLabel && currentLabel) return true;
-        if (!currentLabel && existingLabel) return false;
-        return currentLabel.length > existingLabel.length;
-      };
-      if (!existing || preferCurrent()) {
-        dedupedDevices.set(key, device);
-      }
-    });
-
-    devices = Array.from(dedupedDevices.values());
+    devices = this._dedupeDevicesByGroup(devices);
 
     if (devices.length === 0) {
       return { devices, back: null, front: null };
