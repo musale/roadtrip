@@ -24,6 +24,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingsButton = document.getElementById('settingsButton');
   const settingsMenu = document.getElementById('settingsMenu');
 
+  const cameraStatusMessage = document.getElementById('cameraStatusMessage');
+  const cameraStatusTitle = document.getElementById('cameraStatusTitle');
+  const cameraStatusBody = document.getElementById('cameraStatusBody');
+  const cameraStatusCard = cameraStatusMessage ? cameraStatusMessage.querySelector('div') : null;
+
   const driveTypeButton = document.getElementById('driveTypeButton');
   const currentDriveType = document.getElementById('currentDriveType');
   const captureSettingsButton = document.getElementById('captureSettingsButton');
@@ -95,6 +100,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentMode = 'camera'; // 'camera' or 'map'
   let isRecording = false;
   let wakeLock = null;
+  let cameraCapabilities = { cameraCount: 0, hasUserFacing: false, hasEnvironmentFacing: false };
+  let cameraReady = false;
+  let cameraStatusTimeout = null;
 
   // --- Orientation Handling ---
   const isLandscape = () => window.matchMedia("(orientation: landscape)").matches || window.innerWidth > window.innerHeight;
@@ -132,6 +140,135 @@ document.addEventListener('DOMContentLoaded', async () => {
         showNudge(); // Re-check if nudge should be shown (e.g., if recording)
       }
     }, 100); // Debounce to prevent flicker
+  };
+
+  const clearCameraStatusTimer = () => {
+    if (cameraStatusTimeout) {
+      clearTimeout(cameraStatusTimeout);
+      cameraStatusTimeout = null;
+    }
+  };
+
+  const applyCameraStatusVariant = (variant = 'info') => {
+    if (!cameraStatusCard || !cameraStatusTitle || !cameraStatusBody) return;
+
+    const borderClasses = ['border-white/10', 'border-red-500/60', 'border-emerald-400/60', 'border-yellow-400/60'];
+    const titleClasses = ['text-brand', 'text-red-300', 'text-emerald-300', 'text-yellow-300'];
+    const bodyClasses = ['text-white/80', 'text-red-200', 'text-emerald-200', 'text-yellow-200'];
+
+    cameraStatusCard.classList.remove(...borderClasses);
+    cameraStatusTitle.classList.remove(...titleClasses);
+    cameraStatusBody.classList.remove(...bodyClasses);
+
+    switch (variant) {
+      case 'success':
+        cameraStatusCard.classList.add('border-emerald-400/60');
+        cameraStatusTitle.classList.add('text-emerald-300');
+        cameraStatusBody.classList.add('text-emerald-200');
+        break;
+      case 'error':
+        cameraStatusCard.classList.add('border-red-500/60');
+        cameraStatusTitle.classList.add('text-red-300');
+        cameraStatusBody.classList.add('text-red-200');
+        break;
+      case 'warning':
+        cameraStatusCard.classList.add('border-yellow-400/60');
+        cameraStatusTitle.classList.add('text-yellow-300');
+        cameraStatusBody.classList.add('text-yellow-200');
+        break;
+      default:
+        cameraStatusCard.classList.add('border-white/10');
+        cameraStatusTitle.classList.add('text-brand');
+        cameraStatusBody.classList.add('text-white/80');
+        break;
+    }
+  };
+
+  const showCameraStatus = (title, message, { variant = 'info', autoHideMs = null } = {}) => {
+    if (!cameraStatusMessage || !cameraStatusTitle || !cameraStatusBody) return;
+    clearCameraStatusTimer();
+    applyCameraStatusVariant(variant);
+    cameraStatusTitle.textContent = title;
+    cameraStatusBody.textContent = message;
+    cameraStatusMessage.classList.remove('opacity-0');
+    if (autoHideMs && autoHideMs > 0) {
+      cameraStatusTimeout = setTimeout(() => {
+        hideCameraStatus();
+      }, autoHideMs);
+    }
+  };
+
+  const hideCameraStatus = () => {
+    if (!cameraStatusMessage) return;
+    clearCameraStatusTimer();
+    cameraStatusMessage.classList.add('opacity-0');
+  };
+
+  const toggleInteractiveState = (element, disabled) => {
+    if (!element) return;
+    element.disabled = disabled;
+    element.setAttribute('aria-disabled', disabled);
+    element.classList.toggle('opacity-40', disabled);
+    element.classList.toggle('cursor-not-allowed', disabled);
+  };
+
+  const setStartButtonEnabled = (enabled) => {
+    toggleInteractiveState(startStopButton, !enabled);
+  };
+
+  const syncCameraControlAvailability = () => {
+    const dualSupported = cameraCapabilities.cameraCount >= 2 && cameraCapabilities.hasEnvironmentFacing && cameraCapabilities.hasUserFacing;
+    const canUseEnvironment = cameraCapabilities.hasEnvironmentFacing;
+    const canUseUser = cameraCapabilities.hasUserFacing;
+
+    toggleInteractiveState(btnDual, !dualSupported);
+    toggleInteractiveState(btnFacingEnvironment, !canUseEnvironment);
+    toggleInteractiveState(btnFacingUser, !canUseUser);
+
+    facingCameraButton?.setAttribute('aria-disabled', !canUseEnvironment && !canUseUser);
+    facingCameraButton?.classList.toggle('opacity-40', !canUseEnvironment);
+
+    captureSettingsButton?.setAttribute('aria-disabled', !dualSupported);
+    captureSettingsButton?.classList.toggle('opacity-40', !dualSupported);
+  };
+
+  const handleCameraResult = (result, { silentSuccess = false } = {}) => {
+    if (!result) return false;
+
+    if (result.capabilities) {
+      cameraCapabilities = {
+        cameraCount: result.capabilities.cameraCount ?? 0,
+        hasUserFacing: !!result.capabilities.hasUserFacing,
+        hasEnvironmentFacing: !!result.capabilities.hasEnvironmentFacing,
+      };
+      syncCameraControlAvailability();
+    }
+
+    if (!result.success) {
+      cameraReady = false;
+      setStartButtonEnabled(false);
+      const errorMessage = result.error?.message ?? 'Camera could not be started. Please check permissions and availability.';
+      showCameraStatus('Camera unavailable', errorMessage, { variant: 'error' });
+      return false;
+    }
+
+    cameraReady = true;
+    setStartButtonEnabled(true);
+
+    if (result.warning) {
+      showCameraStatus('Using single camera', result.warning.message, { variant: 'warning', autoHideMs: 5000 });
+    } else if (result.metadata?.facingChanged) {
+      const facingLabel = result.metadata.actualFacing === 'environment' ? 'environment' : 'user';
+      showCameraStatus('Camera adjusted', `Switched to the ${facingLabel} camera that is available on this device.`, { variant: 'warning', autoHideMs: 4000 });
+    } else if (!silentSuccess) {
+      showCameraStatus('Camera ready', 'Video preview is live. You can start your trip.', { variant: 'success', autoHideMs: 2500 });
+    }
+
+    if (silentSuccess) {
+      hideCameraStatus();
+    }
+
+    return true;
   };
 
   // UI Update Functions
@@ -181,12 +318,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     settingsModalContent.innerHTML = '';
     options.forEach(option => {
       const button = document.createElement('button');
-      button.className = `block w-full text-left p-2 rounded-md hover:bg-brand hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75 ${currentSelection === option.value ? 'bg-brand text-black' : ''}`;
+      button.className = `block w-full text-left p-2 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75 ${currentSelection === option.value ? 'bg-brand text-black' : 'hover:bg-brand hover:text-black'} ${option.disabled ? 'opacity-40 cursor-not-allowed' : ''}`;
       button.textContent = option.label;
-      button.addEventListener('click', () => {
-        onSelect(option.value);
-        hideModal();
-      });
+      if (option.description) {
+        button.title = option.description;
+      }
+      if (option.disabled) {
+        button.disabled = true;
+        button.setAttribute('aria-disabled', 'true');
+      } else {
+        button.addEventListener('click', () => {
+          onSelect(option.value);
+          hideModal();
+        });
+      }
       settingsModalContent.appendChild(button);
     });
     settingsModal.classList.remove('hidden');
@@ -521,14 +666,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  const startCamera = async () => {
-    // The videoComposer.setCaptureMode will handle starting the appropriate camera streams
-    // based on the current state.captureMode and state.facing.
-    const success = await videoComposer.setCaptureMode(videoComposer.state.captureMode);
-    if (!success) {
-      alert('Could not start camera. Please check permissions and ensure the camera is not in use by another app.');
+  const startCamera = async ({ initial = false } = {}) => {
+    showCameraStatus('Preparing camera', 'Checking available cameras and starting preview…', { variant: 'info' });
+    setStartButtonEnabled(false);
+
+    const result = await videoComposer.setCaptureMode(videoComposer.state.captureMode, { forceRestart: true });
+
+    const handled = handleCameraResult(result, { silentSuccess: !initial });
+
+    if (!handled) {
+      return false;
     }
-    return success;
+
+    if (cameraCapabilities.cameraCount === 0) {
+      showCameraStatus(
+        'No cameras detected',
+        'This device does not report any cameras. You can still record GPS-only trips without video.',
+        { variant: 'warning' }
+      );
+    }
+
+    return true;
   };
 
   const stopCamera = () => {
@@ -542,7 +700,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!videoComposer.compositeStream) {
       const cameraStarted = await startCamera();
       if (!cameraStarted) {
-        alert('Camera not available. Please ensure permissions are granted and the camera is not in use.');
+        showCameraStatus(
+          'Cannot start recording',
+          'We couldn’t start the camera stream. Check permissions or ensure no other app is using the camera.',
+          { variant: 'error' }
+        );
         return;
       }
     }
@@ -893,30 +1055,50 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   captureSettingsButton.addEventListener('click', () => {
+    const dualSupported = cameraCapabilities.cameraCount >= 2 && cameraCapabilities.hasEnvironmentFacing && cameraCapabilities.hasUserFacing;
     showModal(
       'Capture Settings',
       [
         { label: 'Single Camera', value: 'single' },
-        { label: 'Dual Camera', value: 'dual' },
+        {
+          label: dualSupported ? 'Dual Camera' : 'Dual Camera (requires front & rear cameras)',
+          value: 'dual',
+          disabled: !dualSupported,
+          description: dualSupported ? undefined : 'Dual mode needs both user-facing and environment-facing cameras.',
+        },
       ],
       videoComposer.state.captureMode,
       async (selection) => {
-        await videoComposer.setCaptureMode(selection);
+        const result = await videoComposer.setCaptureMode(selection, { forceRestart: true });
+        handleCameraResult(result);
         updateUI();
       }
     );
   });
 
   facingCameraButton.addEventListener('click', () => {
+    const canUseEnvironment = cameraCapabilities.hasEnvironmentFacing;
+    const canUseUser = cameraCapabilities.hasUserFacing;
     showModal(
       'Facing Camera',
       [
-        { label: 'Environment (Rear)', value: 'environment' },
-        { label: 'User (Front)', value: 'user' },
+        {
+          label: canUseEnvironment ? 'Environment (Rear)' : 'Environment (rear camera not detected)',
+          value: 'environment',
+          disabled: !canUseEnvironment,
+          description: canUseEnvironment ? undefined : 'Connect or enable a rear camera to use this option.',
+        },
+        {
+          label: canUseUser ? 'User (Front)' : 'User (front camera not detected)',
+          value: 'user',
+          disabled: !canUseUser,
+          description: canUseUser ? undefined : 'No user-facing camera was found.',
+        },
       ],
       videoComposer.state.facing,
       async (selection) => {
-        await videoComposer.setFacing(selection);
+        const result = await videoComposer.setFacing(selection);
+        handleCameraResult(result, { silentSuccess: selection === videoComposer.state.facing });
         updateUI();
       }
     );
@@ -959,32 +1141,88 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Event listeners for the modal buttons directly
   btnSingle.addEventListener('click', async () => {
-    await videoComposer.setCaptureMode('single');
+    const result = await videoComposer.setCaptureMode('single', { forceRestart: true });
+    handleCameraResult(result, { silentSuccess: true });
     updateUI();
     hideModal();
   });
 
   btnDual.addEventListener('click', async () => {
-    await videoComposer.setCaptureMode('dual');
+    const result = await videoComposer.setCaptureMode('dual', { forceRestart: true });
+    handleCameraResult(result);
     updateUI();
     hideModal();
   });
 
   btnFacingUser.addEventListener('click', async () => {
-    await videoComposer.setFacing('user');
+    const result = await videoComposer.setFacing('user');
+    handleCameraResult(result, { silentSuccess: true });
     updateUI();
     hideModal();
   });
 
   btnFacingEnvironment.addEventListener('click', async () => {
-    await videoComposer.setFacing('environment');
+    const result = await videoComposer.setFacing('environment');
+    handleCameraResult(result, { silentSuccess: true });
     updateUI();
     hideModal();
   });
 
-  // Initial UI update
-  updateUI();
+  const bootstrapCamera = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showCameraStatus(
+        'Camera unsupported',
+        'This browser does not support camera access. You can still record GPS-only trips.',
+        { variant: 'warning' }
+      );
+      setStartButtonEnabled(false);
+      return;
+    }
 
-  // Initial camera start
-  await startCamera();
+    try {
+      const devices = await videoComposer.refreshCameraInventory();
+      cameraCapabilities = {
+        cameraCount: devices.cameraCount ?? 0,
+        hasUserFacing: !!devices.hasUserFacing,
+        hasEnvironmentFacing: !!devices.hasEnvironmentFacing,
+      };
+      syncCameraControlAvailability();
+
+      if (cameraCapabilities.cameraCount === 0) {
+        showCameraStatus(
+          'No cameras detected',
+          'We couldn’t find any cameras on this device. You can still track trips without video.',
+          { variant: 'warning' }
+        );
+        setStartButtonEnabled(false);
+        return;
+      }
+
+      const defaultFacing = cameraCapabilities.hasEnvironmentFacing ? 'environment' : 'user';
+      videoComposer.state.facing = defaultFacing;
+
+      const result = await startCamera({ initial: true });
+      if (!result) {
+        setStartButtonEnabled(false);
+      }
+    } catch (error) {
+      console.error('Failed to bootstrap camera:', error);
+      showCameraStatus(
+        'Camera error',
+        error?.message ?? 'Could not initialise the camera. Please check permissions.',
+        { variant: 'error' }
+      );
+      setStartButtonEnabled(false);
+    }
+  };
+
+  updateUI();
+  bootstrapCamera();
+
+  window.addEventListener('focus', async () => {
+    if (!cameraReady && navigator.mediaDevices) {
+      await startCamera({ initial: true });
+    }
+  });
+
 });
