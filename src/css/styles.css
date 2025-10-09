@@ -127,3 +127,27 @@ h1, h2, h3, h4, h5, h6 {
   height: 100%;
   filter: saturate(1.15) contrast(1.1);
 }
+
+.recording-controls {
+  position: absolute;
+  bottom: clamp(1rem, 4vw, 2.5rem);
+  left: clamp(1rem, 4vw, 2.5rem);
+  width: min(320px, 48vw);
+  z-index: 40;
+  backdrop-filter: blur(16px);
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+@media (min-width: 768px) {
+  .recording-controls {
+    width: min(360px, 42vw);
+  }
+}
+
+.recording-controls.controls-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(20px);
+}

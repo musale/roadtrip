@@ -41,7 +41,7 @@
     </div>
 
     <!-- Overlay Container for all UI elements -->
-    <div class="absolute inset-0 flex flex-col justify-between p-4 md:p-8">
+    <div class="absolute inset-0 p-4 md:p-8">
 
       <!-- Landscape Nudge Banner (hidden by default) -->
       <div id="landscapeNudge"
@@ -52,7 +52,7 @@
 
       <!-- Top-Left: Live HUD (initially hidden) -->
       <div id="liveHud"
-        class="hidden bg-black bg-opacity-50 p-3 rounded-lg shadow-lg max-w-xs text-brand font-heading text-sm md:text-base">
+        class="hidden absolute top-4 left-4 md:top-8 md:left-8 bg-black bg-opacity-50 p-3 rounded-lg shadow-lg max-w-xs text-brand font-heading text-sm md:text-base">
         <div class="flex justify-between">
           <span>SPEED:</span>
           <span id="hudSpeed">0.0 MPH</span>
@@ -67,26 +67,25 @@
         </div>
       </div>
 
-      <!-- Center: Recording Controls -->
-      <div class="flex-grow flex items-center justify-center">
-        <div class="flex flex-col items-center gap-6 w-full max-w-xs">
-          <button id="startStopButton"
-            class="relative w-full py-4 text-xl md:text-3xl font-heading text-brand bg-black bg-opacity-30 rounded-full shadow-neon transition-all duration-300 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">
-            <span class="relative z-10">Start Trip</span>
-            <span class="absolute inset-0 rounded-full animate-glowPulse"></span>
+      <!-- Bottom-Left: Recording Controls -->
+      <div id="recordingControls"
+        class="recording-controls flex flex-col gap-4 rounded-3xl bg-black/20 px-4 py-4 md:px-5 md:py-5">
+        <button id="startStopButton"
+          class="relative w-full py-3 md:py-4 text-lg md:text-2xl font-heading text-brand bg-black bg-opacity-30 rounded-full shadow-neon transition-all duration-300 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">
+          <span class="relative z-10">Start Trip</span>
+          <span class="absolute inset-0 rounded-full animate-glowPulse"></span>
+        </button>
+        <div class="flex items-center gap-3 w-full">
+          <!-- Mute button, shown only during recording -->
+          <button id="muteButton"
+            class="hidden flex-1 px-3 py-2 h-11 text-xs md:text-sm font-heading text-white bg-black/60 rounded-full shadow-lg border border-white/20 backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75 flex items-center justify-center">
+            Mute
           </button>
-          <div class="flex items-center gap-4 w-full">
-            <!-- Mute button, shown only during recording -->
-            <button id="muteButton"
-              class="hidden basis-1/3 px-4 py-2 h-12 text-sm font-heading text-white bg-black/60 rounded-full shadow-lg border border-white/20 backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75 flex items-center justify-center">
-              Mute
-            </button>
-            <!-- Pause/Resume button, shown only during recording -->
-            <button id="pauseResumeButton"
-              class="hidden basis-2/3 px-4 py-2 h-12 text-sm font-heading text-black bg-yellow-400/90 rounded-full shadow-lg border border-yellow-200/60 backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-opacity-75 flex items-center justify-center">
-              Pause Trip
-            </button>
-          </div>
+          <!-- Pause/Resume button, shown only during recording -->
+          <button id="pauseResumeButton"
+            class="hidden flex-[1.4] px-3 py-2 h-11 text-xs md:text-sm font-heading text-black bg-yellow-400/90 rounded-full shadow-lg border border-yellow-200/60 backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-opacity-75 flex items-center justify-center">
+            Pause Trip
+          </button>
         </div>
       </div>
 
@@ -200,7 +199,7 @@
               Share
             </button>
             <div id="shareMenu"
-              class="hidden absolute right-0 top-full mt-2 w-48 rounded-2xl bg-surface/95 text-sm text-white/90 shadow-neon backdrop-blur">
+              class="hidden absolute right-0 top-full mt-2 w-48 rounded-2xl bg-surface/95 text-sm text-white/90 shadow-neon backdrop-blur z-50">
               <button id="shareVideoOption" class="settings-item">Share Video</button>
               <button id="shareImageOption" class="settings-item">Share Summary Image</button>
             </div>
