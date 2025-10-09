@@ -520,16 +520,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       ?? annotatedDevices.find(item => item.device.deviceId !== defaultBackId)?.device?.deviceId
       ?? annotatedDevices[0].device.deviceId;
 
-    settingsModalTitle.textContent = 'Select Dual Cameras';
-    settingsModalContent.innerHTML = '';
+  settingsModalTitle.textContent = 'Select Dual Cameras';
+  settingsModalContent.innerHTML = '';
+  settingsModalContent.classList.add('flex', 'flex-col', 'max-h-[80vh]', 'overflow-hidden');
 
-    const instructions = document.createElement('p');
-    instructions.className = 'text-sm text-white/80 mb-4';
+  const instructions = document.createElement('p');
+  instructions.className = 'text-sm text-white/80 mb-3 flex-shrink-0';
     instructions.textContent = 'Choose which physical cameras feed the rear and front views. Dual recording will restart using your selections.';
     settingsModalContent.appendChild(instructions);
 
-    const form = document.createElement('form');
-    form.className = 'space-y-6';
+  const form = document.createElement('form');
+  form.className = 'flex flex-col gap-4 flex-1 min-h-0';
     settingsModalContent.appendChild(form);
 
     const selectionState = {
@@ -563,8 +564,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         fieldset.appendChild(desc);
       }
 
+      const seen = new Set();
       sortedDevices.forEach((item, index) => {
         const { device } = item;
+        const key = device.deviceId ?? `unknown-${index}`;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
         const optionId = `${name}-${index}`;
         const wrapper = document.createElement('label');
         wrapper.className = 'flex items-center gap-3 rounded-md border border-white/10 px-3 py-2 cursor-pointer transition hover:border-brand focus-within:border-brand';
@@ -591,20 +598,20 @@ document.addEventListener('DOMContentLoaded', async () => {
           validateSelections();
         });
 
-        const textContainer = document.createElement('div');
-        textContainer.className = 'flex flex-col';
+    const textContainer = document.createElement('div');
+    textContainer.className = 'flex flex-col';
 
-  const primaryLabel = document.createElement('span');
-  primaryLabel.className = 'text-sm text-white';
-  primaryLabel.textContent = device.label || `Camera ${index + 1}`;
-  textContainer.appendChild(primaryLabel);
+    const primaryLabel = document.createElement('span');
+    primaryLabel.className = 'text-sm text-white';
+    primaryLabel.textContent = device.label || `Camera ${index + 1}`;
+    textContainer.appendChild(primaryLabel);
 
-  const deviceIdLabel = document.createElement('span');
-  deviceIdLabel.className = 'text-[11px] text-white/50 break-all';
-  deviceIdLabel.textContent = `ID: ${device.deviceId}`;
-  textContainer.appendChild(deviceIdLabel);
+    const deviceIdLabel = document.createElement('span');
+    deviceIdLabel.className = 'text-[11px] text-white/50 break-all';
+    deviceIdLabel.textContent = `ID: ${device.deviceId}`;
+    textContainer.appendChild(deviceIdLabel);
 
-  const facingHint = facingDescription(item);
+    const facingHint = facingDescription(item);
         if (facingHint) {
           const secondary = document.createElement('span');
           secondary.className = 'text-xs text-white/60';
@@ -627,22 +634,47 @@ document.addEventListener('DOMContentLoaded', async () => {
       return fieldset;
     };
 
-  const sortedForBack = [...backDevices, ...unknownDevices, ...frontDevices];
-  const sortedForFront = [...frontDevices, ...unknownDevices, ...backDevices];
+    const mergeUnique = (...groups) => {
+      const seen = new Set();
+      const result = [];
+      groups.forEach(group => {
+        group.forEach(item => {
+          const key = item.device.deviceId || `${item.device.groupId ?? 'unknown'}::${item.device.label ?? 'unnamed'}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          result.push(item);
+        });
+      });
+      return result;
+    };
 
-  const backFieldset = buildFieldset('backCamera', 'Back camera (rear view)', 'Pick the camera pointed at the road.', sortedForBack, defaultBackId);
-  const frontFieldset = buildFieldset('frontCamera', 'Front camera (self view)', 'Pick the camera facing you.', sortedForFront, defaultFrontId);
+    let sortedForBack = mergeUnique(backDevices, unknownDevices);
+    if (sortedForBack.length === 0) {
+      sortedForBack = mergeUnique(unknownDevices, frontDevices, annotatedDevices);
+    }
 
-    form.appendChild(backFieldset);
-    form.appendChild(frontFieldset);
+    let sortedForFront = mergeUnique(frontDevices, unknownDevices);
+    if (sortedForFront.length === 0) {
+      sortedForFront = mergeUnique(unknownDevices, backDevices, annotatedDevices);
+    }
+
+    const contentWrapper = document.createElement('div');
+    contentWrapper.className = 'flex-1 overflow-y-auto pr-2 space-y-6 min-h-0';
+    form.appendChild(contentWrapper);
+
+    const backFieldset = buildFieldset('backCamera', 'Back camera (rear view)', 'Pick the camera pointed at the road.', sortedForBack, defaultBackId);
+    const frontFieldset = buildFieldset('frontCamera', 'Front camera (self view)', 'Pick the camera facing you.', sortedForFront, defaultFrontId);
+
+    contentWrapper.appendChild(backFieldset);
+    contentWrapper.appendChild(frontFieldset);
 
     const validationMessage = document.createElement('p');
     validationMessage.className = 'text-sm text-red-300 hidden';
     validationMessage.textContent = 'Choose two different cameras for front and back.';
-    form.appendChild(validationMessage);
+    contentWrapper.appendChild(validationMessage);
 
     const actions = document.createElement('div');
-    actions.className = 'flex items-center justify-end gap-3 pt-2';
+    actions.className = 'flex items-center justify-end gap-3 pt-3 border-t border-white/10 bg-slate-900/90 backdrop-blur-sm flex-shrink-0';
 
     const cancelButton = document.createElement('button');
     cancelButton.type = 'button';
