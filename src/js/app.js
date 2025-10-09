@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const hudDistance = document.getElementById('hudDistance');
   const hudTime = document.getElementById('hudTime');
   const startStopButton = document.getElementById('startStopButton');
+  const muteButton = document.getElementById('muteButton'); // Mute button
   const settingsButton = document.getElementById('settingsButton');
   const settingsMenu = document.getElementById('settingsMenu');
 
@@ -99,11 +100,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       startStopButton.innerHTML = '<span class="relative z-10">Stop Trip</span><span class="absolute inset-0 rounded-full animate-glowPulse"></span>';
       liveHud.classList.remove('hidden');
       settingsButton.classList.add('hidden'); // Hide settings during recording
+      muteButton.classList.remove('hidden'); // Show mute button
       settingsMenu.classList.add('hidden'); // Ensure menu is hidden
     } else {
       startStopButton.innerHTML = '<span class="relative z-10">Start Trip</span><span class="absolute inset-0 rounded-full animate-glowPulse"></span>';
       liveHud.classList.add('hidden');
       settingsButton.classList.remove('hidden'); // Show settings when idle
+      muteButton.classList.add('hidden'); // Hide mute button
+      muteButton.textContent = 'Mute'; // Reset mute button text
     }
 
     // Handle map/camera view
@@ -465,6 +469,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             distance: hudDistance.textContent,
             time: hudTime.textContent,
         });
+
+        // Continuously update mute status for video overlay
+        const isMuted = videoComposer.audioTrack ? !videoComposer.audioTrack.enabled : false;
+        videoComposer.setMutedState(isMuted);
+
         if (currentMode === 'map') {
           mapView.updateLiveTrack(tripData.points);
           mapView.setCurrentPoint(tripData.points[tripData.points.length - 1]);
@@ -527,6 +536,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       startRecording();
     }
   });
+
+  // Toggles the microphone audio track on the current stream.
+  const toggleMute = () => {
+    if (!videoComposer.audioTrack) return;
+
+    // Toggle the enabled state of the audio track
+    videoComposer.audioTrack.enabled = !videoComposer.audioTrack.enabled;
+
+    // Update UI
+    const isMuted = !videoComposer.audioTrack.enabled;
+    muteButton.textContent = isMuted ? 'Unmute' : 'Mute';
+  };
+
+  muteButton.addEventListener('click', toggleMute);
 
   settingsButton.addEventListener('click', (event) => {
     event.stopPropagation();
