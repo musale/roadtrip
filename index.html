@@ -139,9 +139,9 @@
 
     <!-- Past Trips Overlay (initially hidden) -->
     <div id="pastTripsOverlay"
-      class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-40">
+      class="hidden fixed inset-0 bg-surface z-40">
       <div
-        class="bg-surface p-6 rounded-lg shadow-neon text-brand font-body w-11/12 md:w-3/4 h-5/6 overflow-hidden relative flex flex-col">
+        class="p-6 text-brand font-body w-full h-full overflow-hidden relative flex flex-col">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-xl font-heading">Past Trips</h2>
           <div class="flex items-center gap-2">
@@ -168,12 +168,29 @@
     </div>
 
     <!-- Trip Summary Overlay (initially hidden) -->
-    <div id="tripSummaryOverlay" class="hidden fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-40">
-      <div class="bg-surface p-4 md:p-6 rounded-lg shadow-neon text-brand font-body w-11/12 max-w-2xl relative">
+    <div id="tripSummaryOverlay" class="hidden fixed inset-0 bg-surface z-40">
+      <div class="p-4 md:p-6 text-brand font-body w-full h-full relative">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-xl font-heading">Trip Summary</h2>
-          <button id="tripSummaryClose"
-            class="bg-brand text-black p-2 rounded-full font-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">X</button>
+          <div class="flex items-center gap-2">
+            <!-- Share Button & Menu -->
+            <div class="relative">
+              <button id="shareTripSummaryBtn"
+                class="hidden bg-brand text-black p-2 rounded-full font-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path
+                    d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" />
+                </svg>
+              </button>
+              <div id="shareMenu"
+                class="hidden absolute right-0 top-full mt-2 w-48 bg-surface/95 border border-brand/30 rounded-lg shadow-neon text-sm text-white backdrop-blur z-50 overflow-hidden">
+                <button id="shareVideoOption" class="settings-item">Share Video</button>
+                <button id="shareImageOption" class="settings-item">Share Summary Image</button>
+              </div>
+            </div>
+            <button id="tripSummaryClose"
+              class="bg-brand text-black p-2 rounded-full font-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-opacity-75">X</button>
+          </div>
         </div>
         <div class="space-y-4">
           <div id="tripSummaryMap" class="card bg-black/30 rounded-lg" style="height:300px"></div>
@@ -187,6 +204,7 @@
 
   </div>
   <script type="module" src="/src/js/app.js"></script>
+  <div id="shareMenuPortal" class="fixed inset-0 z-[2147483647] pointer-events-none"></div>
 </body>
 
 </html>

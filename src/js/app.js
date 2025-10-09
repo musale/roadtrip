@@ -7,6 +7,7 @@ import LiveHUD from './LiveHUD.js';
 import VideoComposer from './VideoComposer.js';
 import MapView from './MapView.js';
 import { getTrips, writeVideoToOpfs, clearVideoChunks, readVideoFromOpfs, deleteTrip, clearTrips, deleteVideoFromOpfs } from './storage/db.js';
+import { initShareButton, shareVideo, shareSummaryImage, downloadBlob, debounce } from './Share.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const videoContainer = document.getElementById('videoContainer');
@@ -240,9 +241,63 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
+  const shareSummaryImageFromPastTrip = async (trip) => {
+    console.log('shareSummaryImageFromPastTrip called with trip:', trip);
+    if (!trip || !trip.points || trip.points.length < 2) {
+      alert('Trip is too short to generate a summary image.');
+      return;
+    }
+
+    const tempMapContainer = document.createElement('div');
+    tempMapContainer.id = `temp-map-${trip.id}`;
+    tempMapContainer.style.width = '1200px';
+    tempMapContainer.style.height = '700px';
+    tempMapContainer.style.position = 'absolute';
+    tempMapContainer.style.left = '-9999px'; // Position off-screen
+    tempMapContainer.style.top = '-9999px';
+    document.body.appendChild(tempMapContainer);
+
+    const coords = trip.points.map(p => [p.lon, p.lat]);
+    const geojson = {
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: coords },
+    };
+
+    const tempMap = new maplibregl.Map({
+      style: 'https://api.maptiler.com/maps/streets/style.json?key=EPHzQXKE9VY3oRnWNgJC',
+      center: coords[0],
+      zoom: 12,
+      interactive: false,
+      attributionControl: false,
+    });
+
+    tempMap.on('load', () => {
+      tempMap.addSource('route', { type: 'geojson', data: geojson });
+      tempMap.addLayer({
+        id: 'route-line',
+        type: 'line',
+        source: 'route',
+        paint: { 'line-color': '#0ea5e9', 'line-width': 4, 'line-opacity': 0.8 }
+      });
+
+      const bounds = new maplibregl.LngLatBounds();
+      coords.forEach(coord => bounds.extend(coord));
+      tempMap.fitBounds(bounds, { padding: 40, duration: 0 });
+
+      tempMap.once('idle', async () => {
+        console.log('tempMap is idle, calling shareSummaryImage...');
+        await shareSummaryImage({ map: tempMap, trip });
+        // Cleanup
+        tempMap.remove();
+        document.body.removeChild(tempMapContainer);
+      });
+    });
+  };
+
   const renderTrip = (trip) => {
     const li = document.createElement('li');
     li.className = 'flex flex-col gap-3 bg-black/60 border border-white/10 rounded-lg p-4 shadow-inner backdrop-blur-sm';
+    li.dataset.tripId = trip.id;
 
     const { value: distanceValue, unit: distanceUnit } = getDistanceDisplay(trip.stats.distanceM);
     const { value: avgSpeedValue, unit: speedUnitLabel } = getSpeedDisplay(trip.stats.avgKph);
@@ -250,18 +305,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const durationFormatted = formatDuration(trip.stats.durationMs);
     const hasVideo = Boolean(trip.videoFilename);
     const hasTrack = Array.isArray(trip.points) && trip.points.length > 0;
-
-    const videoButtons = hasVideo
-      ? `
-        <button class="trip-action replay-video">Replay</button>
-        <button class="trip-action download-video">Download</button>
-        <button class="trip-action share-video">Share</button>
-      `
-      : `
-        <button class="trip-action cursor-not-allowed opacity-40" disabled>Replay</button>
-        <button class="trip-action cursor-not-allowed opacity-40" disabled>Download</button>
-        <button class="trip-action cursor-not-allowed opacity-40" disabled>Share</button>
-      `;
 
     li.innerHTML = `
       <div class="flex items-start justify-between gap-4">
@@ -271,14 +314,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
         <button class="delete-trip text-xs uppercase tracking-wide text-red-400 hover:text-red-300 font-heading">✕</button>
       </div>
-      <div class="flex flex-wrap justify-end gap-2">
-        ${videoButtons}
-        <button class="trip-action export-gpx${hasTrack ? '' : ' opacity-40'}" ${hasTrack ? '' : 'disabled'}>GPX</button>
-        <button class="trip-action export-geojson${hasTrack ? '' : ' opacity-40'}" ${hasTrack ? '' : 'disabled'}>GeoJSON</button>
+      <div class="flex flex-wrap justify-end gap-2 items-center">
+        <button class="trip-action replay-video" ${hasVideo ? '' : 'disabled'}>Replay</button>
+        <button class="trip-action export-gpx" ${hasTrack ? '' : 'disabled'}>GPX</button>
+        <button class="trip-action export-geojson" ${hasTrack ? '' : 'disabled'}>GeoJSON</button>
+
+        <!-- Share Button -->
+        <button class="trip-action share-button">Share</button>
       </div>
     `;
 
-  tripList.appendChild(li);
+    tripList.appendChild(li);
+
+    // --- Event Listeners for the new element ---
+    const shareButton = li.querySelector('.share-button');
+
+    shareButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openShareMenuPortal(trip, shareButton);
+    });
 
     li.querySelector('.delete-trip').addEventListener('click', () => handleDeleteTrip(trip));
 
@@ -289,117 +343,24 @@ document.addEventListener('DOMContentLoaded', async () => {
           const videoURL = URL.createObjectURL(videoBlob);
           replayVideoPlayer.src = videoURL;
           videoPlayerOverlay.classList.remove('hidden');
-          try {
-            await replayVideoPlayer.play();
-          } catch (error) {
-            console.warn('Unable to autoplay replay video:', error);
-          }
-          replayVideoPlayer.addEventListener('ended', () => {
-            URL.revokeObjectURL(videoURL);
-            replayVideoPlayer.src = '';
-            videoPlayerOverlay.classList.add('hidden');
-          }, { once: true });
+          replayVideoPlayer.play().catch(err => console.warn("Replay autoplay prevented:", err));
         } else {
           alert('Could not retrieve video.');
         }
       });
-
-      li.querySelector('.download-video').addEventListener('click', async () => {
-        const videoBlob = await getTripVideoBlob(trip);
-        if (videoBlob) {
-          const url = URL.createObjectURL(videoBlob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = trip.videoFilename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        } else {
-          alert('Could not retrieve video for download.');
-        }
-      });
-
-      li.querySelector('.share-video').addEventListener('click', async () => {
-        const videoBlob = await getTripVideoBlob(trip);
-        if (!videoBlob) {
-          alert('Could not retrieve video for sharing.');
-          return;
-        }
-
-        try {
-          const videoFile = new File([videoBlob], trip.videoFilename, { type: videoBlob.type });
-          if (navigator.canShare && navigator.canShare({ files: [videoFile] }) && navigator.share) {
-            await navigator.share({
-              files: [videoFile],
-              title: `RoadTrip - ${new Date(trip.startedAt).toLocaleString()}`,
-              text: `Check out my RoadTrip video from ${new Date(trip.startedAt).toLocaleString()}!`,
-            });
-          } else if (navigator.share) {
-            await navigator.share({
-              title: `RoadTrip - ${new Date(trip.startedAt).toLocaleString()}`,
-              text: `Check out my RoadTrip video from ${new Date(trip.startedAt).toLocaleString()}!`,
-            });
-          } else {
-            const url = URL.createObjectURL(videoBlob);
-            const shareWindow = window.open(url, '_blank');
-            if (!shareWindow) {
-              alert('Sharing not supported in this browser. The video will be downloaded instead.');
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = trip.videoFilename;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-            }
-            setTimeout(() => URL.revokeObjectURL(url), 60_000);
-          }
-        } catch (error) {
-          console.error('Error sharing video:', error);
-          alert('Failed to share video. ' + (error.message || ''));
-        }
-      });
     }
 
-    li.querySelector('.export-gpx').addEventListener('click', () => {
-      if (!hasTrack) {
-        alert('This trip has no GPS track to export.');
-        return;
-      }
-      const blob = tripRecorder.exportGPX(trip);
-      if (!blob) {
-        alert('Something went wrong while creating the GPX file.');
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `roadtrip-${trip.id}.gpx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    });
+    if (hasTrack) {
+      li.querySelector('.export-gpx').addEventListener('click', () => {
+        const blob = tripRecorder.exportGPX(trip);
+        if (blob) downloadBlob(blob, `roadtrip-${trip.id}.gpx`);
+      });
 
-    li.querySelector('.export-geojson').addEventListener('click', () => {
-      if (!hasTrack) {
-        alert('This trip has no GPS track to export.');
-        return;
-      }
-      const blob = tripRecorder.exportGeoJSON(trip);
-      if (!blob) {
-        alert('Something went wrong while creating the GeoJSON file.');
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `roadtrip-${trip.id}.geojson`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    });
+      li.querySelector('.export-geojson').addEventListener('click', () => {
+        const blob = tripRecorder.exportGeoJSON(trip);
+        if (blob) downloadBlob(blob, `roadtrip-${trip.id}.geojson`);
+      });
+    }
   };
 
   const loadAndRenderTrips = async () => {
@@ -417,6 +378,111 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const hidePastTripsOverlay = () => {
     pastTripsOverlay.classList.add('hidden');
+  };
+
+  const openShareMenuPortal = (trip, shareButtonElement) => {
+    const portal = document.getElementById('shareMenuPortal');
+    portal.innerHTML = ''; // Clear previous menu if any
+    portal.classList.remove('pointer-events-none'); // Enable interactions
+
+    const menuRect = shareButtonElement.getBoundingClientRect();
+
+    const shareMenu = document.createElement('div');
+    shareMenu.className = 'share-menu absolute bg-surface/95 border border-brand/30 rounded-lg shadow-neon text-sm text-white backdrop-blur z-[999] overflow-hidden';
+    shareMenu.style.minWidth = `200px`; // Increased width for better readability
+    portal.appendChild(shareMenu); // Append first to get offsetWidth/Height
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const menuWidth = shareMenu.offsetWidth;
+    const menuHeight = shareMenu.offsetHeight;
+    const padding = 10; // Padding from viewport edges
+
+    let topPosition = menuRect.bottom + 8; // Default: 8px below the button
+    let leftPosition = menuRect.right - menuWidth; // Default: align right edge of menu with right edge of button
+
+    // Horizontal positioning
+    if (leftPosition < padding) {
+      leftPosition = padding; // If it overflows left, align with left edge of viewport with padding
+    }
+
+    // Vertical positioning
+    if (topPosition + menuHeight > viewportHeight - padding) {
+      // If it overflows bottom, try positioning above the button
+      topPosition = menuRect.top - menuHeight - 8; // 8px above the button
+      if (topPosition < padding) {
+        topPosition = padding; // Fallback to top edge with padding
+      }
+    }
+
+    shareMenu.style.top = `${topPosition}px`;
+    shareMenu.style.left = `${leftPosition}px`;
+
+    // Add menu items (similar to the old HTML structure)
+    const hasVideo = Boolean(trip.videoFilename);
+    const hasTrack = Array.isArray(trip.points) && trip.points.length > 0;
+
+    shareMenu.innerHTML = `
+      <button class="settings-item share-video-option" ${hasVideo ? '' : 'disabled'}>Share Video</button>
+      <button class="settings-item download-video-option" ${hasVideo ? '' : 'disabled'}>Download Video</button>
+      <button class="settings-item share-image-option" ${hasTrack ? '' : 'disabled'}>Share Summary Image</button>
+    `;
+
+    portal.appendChild(shareMenu);
+
+    // Event listeners for menu items
+    if (hasVideo) {
+      shareMenu.querySelector('.share-video-option').addEventListener('click', debounce(async () => {
+        closeShareMenuPortal();
+        const videoBlob = await getTripVideoBlob(trip);
+        if (videoBlob) {
+          shareVideo(videoBlob, trip.videoFilename);
+        } else {
+          alert('Could not retrieve video file.');
+        }
+      }, 500));
+
+      shareMenu.querySelector('.download-video-option').addEventListener('click', debounce(async () => {
+        closeShareMenuPortal();
+        const videoBlob = await getTripVideoBlob(trip);
+        if (videoBlob) {
+          downloadBlob(videoBlob, trip.videoFilename);
+        } else {
+          alert('Could not retrieve video file.');
+        }
+      }, 500));
+    }
+
+    if (hasTrack) {
+      shareMenu.querySelector('.share-image-option').addEventListener('click', debounce(() => {
+        closeShareMenuPortal();
+        shareSummaryImageFromPastTrip(trip);
+      }, 500));
+    }
+
+    // Click outside to close
+    const clickOutsideHandler = (e) => {
+      if (!shareMenu.contains(e.target) && e.target !== shareButtonElement) {
+        closeShareMenuPortal();
+      }
+    };
+    document.addEventListener('click', clickOutsideHandler);
+
+    // Escape key to close
+    const escapeHandler = (e) => {
+      if (e.key === 'Escape') {
+        closeShareMenuPortal();
+      }
+    };
+    document.addEventListener('keydown', escapeHandler);
+
+    // Function to close the portal
+    const closeShareMenuPortal = () => {
+      portal.innerHTML = '';
+      portal.classList.add('pointer-events-none');
+      document.removeEventListener('click', clickOutsideHandler);
+      document.removeEventListener('keydown', escapeHandler);
+    };
   };
 
   async function handleDeleteTrip(trip) {
@@ -696,7 +762,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (summaryMap) summaryMap.remove();
     summaryMap = new maplibregl.Map({
       container: 'tripSummaryMap',
-      style: 'https://api.maptiler.com/maps/streets/style.json?key=YOUR_MAPTILER_API_KEY', // Replace with your key
+      style: 'https://api.maptiler.com/maps/streets/style.json?key=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4M29iazA2Z2gycXA4N2xpZm5oZHcifQ.F_s5Wz_EFR4jgDPYqtZpLg', // Replace with your key
       center: coords[0],
       zoom: 12,
       attributionControl: false
@@ -755,6 +821,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       coords.forEach(coord => bounds.extend(coord));
       summaryMap.fitBounds(bounds, { padding: 40, maxZoom: 16, duration: 0 });
     });
+
+    // Initialize the share button now that the summary is visible
+    console.log('Calling initShareButton with trip:', trip, 'and summaryMap:', summaryMap);
+    initShareButton(trip, summaryMap, getTripVideoBlob);
   };
 
   // Event Listeners
@@ -787,8 +857,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   settingsMenu.addEventListener('click', (event) => event.stopPropagation());
 
-  document.addEventListener('click', () => {
+  document.addEventListener('click', (e) => {
     settingsMenu.classList.add('hidden');
+    // The share menu is now handled by its own click-outside logic in openShareMenuPortal
   });
 
   settingsModalClose.addEventListener('click', hideModal);
