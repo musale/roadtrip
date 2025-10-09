@@ -469,6 +469,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             distance: hudDistance.textContent,
             time: hudTime.textContent,
         });
+
+        // Continuously update mute status for video overlay
+        const isMuted = videoComposer.audioTrack ? !videoComposer.audioTrack.enabled : false;
+        videoComposer.setMutedState(isMuted);
+
         if (currentMode === 'map') {
           mapView.updateLiveTrack(tripData.points);
           mapView.setCurrentPoint(tripData.points[tripData.points.length - 1]);
@@ -535,8 +540,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Toggles the microphone audio track on the current stream.
   const toggleMute = () => {
     if (!videoComposer.audioTrack) return;
+
+    // Toggle the enabled state of the audio track
     videoComposer.audioTrack.enabled = !videoComposer.audioTrack.enabled;
-    muteButton.textContent = videoComposer.audioTrack.enabled ? 'Mute' : 'Unmute';
+
+    // Update UI
+    const isMuted = !videoComposer.audioTrack.enabled;
+    muteButton.textContent = isMuted ? 'Unmute' : 'Mute';
   };
 
   muteButton.addEventListener('click', toggleMute);

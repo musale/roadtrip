@@ -19,6 +19,7 @@ class VideoComposer {
     this.recordedBlobs = [];
     this.compositeStream = null;
     this.audioTrack = null; // To hold the audio track from the primary stream
+    this.isMuted = false; // To track mute state for video overlay
 
     // Compositor canvas for recording
     this.compositorCanvas = document.createElement('canvas');
@@ -446,6 +447,14 @@ class VideoComposer {
     this.hud = { ...this.hud, ...hudData };
   }
 
+  /**
+   * Sets the muted state to be displayed on the video overlay.
+   * @param {boolean} isMuted Whether the audio is currently muted.
+   */
+  setMutedState(isMuted) {
+    this.isMuted = isMuted;
+  }
+
   _drawHUD(ctx, width, height) {
     // Draw a semi-transparent black rectangle at the bottom for the HUD background
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
@@ -466,6 +475,15 @@ class VideoComposer {
     // Distance (right aligned)
     ctx.textAlign = 'right';
     ctx.fillText(this.hud.distance, width - 10, height - 25);
+
+    // Draw mute indicator if muted
+    if (this.isMuted) {
+      ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
+      ctx.font = 'bold 22px Arial';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('MUTED', 10, 10);
+    }
   }
 }
 
