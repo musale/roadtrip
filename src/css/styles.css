@@ -272,3 +272,72 @@ h1, h2, h3, h4, h5, h6 {
     flex: 1;
   }
 }
+
+#cameraDiag {
+  scrollbar-width: thin;
+}
+
+#cameraDiag .camera-diag-list {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.9rem;
+  background: rgba(12, 12, 14, 0.65);
+  overflow: hidden;
+  max-height: 260px;
+  overflow-y: auto;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+#cameraDiag .camera-diag-list table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+#cameraDiag .camera-diag-list thead th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.04);
+  position: sticky;
+  top: 0;
+  backdrop-filter: blur(6px);
+}
+
+#cameraDiag .camera-diag-list tbody td {
+  padding: 0.45rem 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+#cameraDiag .camera-diag-list tbody tr:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+#cameraDiag .camera-diag-list tbody tr.highlight td {
+  background: rgba(0, 245, 212, 0.12);
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+}
+
+#cameraDiag .diag-message {
+  padding: 0.85rem 1rem;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+#cameraDiagStatus[data-tone="success"] {
+  color: rgba(52, 211, 153, 0.9);
+}
+
+#cameraDiagStatus[data-tone="error"] {
+  color: rgba(248, 113, 113, 0.9);
+}
+
+#cameraDiagStatus[data-tone="warning"] {
+  color: rgba(250, 204, 21, 0.9);
+}
+
+#cameraDiagStatus[data-tone="info"] {
+  color: rgba(255, 255, 255, 0.6);
+}

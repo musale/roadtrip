@@ -148,11 +148,52 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </button>
+            <button id="cameraDiagToggle"
+              class="settings-item border-t border-white/5 flex items-center justify-between gap-4">
+              <span>Camera Diagnostics</span>
+              <span id="cameraDiagSummary" class="text-xs uppercase tracking-wide text-white/50">Idle</span>
+            </button>
           </div>
         </div>
       </div>
 
     </div>
+
+    <section id="cameraDiag"
+      class="hidden absolute top-[7rem] right-4 md:top-[6.5rem] md:right-8 z-50 w-[min(560px,calc(100%-2rem))] max-h-[80vh] overflow-hidden rounded-2xl border border-white/10 bg-[#101010]/95 backdrop-blur-xl shadow-neon p-4 text-white/90 flex flex-col">
+      <div class="flex items-start justify-between gap-3 mb-3 flex-shrink-0">
+        <div>
+          <h3 class="font-heading text-lg">Camera Diagnostics</h3>
+          <p id="cameraDiagStatus" class="text-xs text-white/60 mt-1">Run diagnostics to inspect your cameras.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="cameraDiagRefresh" type="button"
+            class="px-3 py-1 rounded-lg border border-brand/50 text-xs font-heading uppercase tracking-wide text-brand hover:bg-brand hover:text-black transition-colors duration-150">
+            Refresh
+          </button>
+          <button id="cameraDiagClose" type="button"
+            class="h-7 w-7 rounded-full border border-white/20 text-white/70 hover:text-white hover:border-white/40 flex items-center justify-center">
+            ×
+          </button>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <div class="text-sm opacity-80 mb-2">Best Front: <strong id="bestFront" class="text-brand">—</strong></div>
+            <div id="frontList" class="camera-diag-list">
+              <div class="diag-message">Waiting for diagnostics…</div>
+            </div>
+          </div>
+          <div>
+            <div class="text-sm opacity-80 mb-2">Best Back: <strong id="bestBack" class="text-brand">—</strong></div>
+            <div id="backList" class="camera-diag-list">
+              <div class="diag-message">Waiting for diagnostics…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- Generic Modal for settings (initially hidden) -->
     <div id="settingsModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
