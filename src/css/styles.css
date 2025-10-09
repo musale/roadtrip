@@ -130,11 +130,13 @@ h1, h2, h3, h4, h5, h6 {
 
 .recording-controls {
   position: absolute;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(1rem, 4vw, 2.5rem));
-  left: calc(env(safe-area-inset-left, 0px) + clamp(1rem, 4vw, 2.5rem));
-  right: calc(env(safe-area-inset-right, 0px) + clamp(1rem, 4vw, 2.5rem));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(0.75rem, 4vh, 2rem));
+  left: calc(env(safe-area-inset-left, 0px) + clamp(0.75rem, 4vw, 2rem));
+  right: calc(env(safe-area-inset-right, 0px) + clamp(0.75rem, 4vw, 2rem));
   box-sizing: border-box;
   z-index: 40;
+  max-width: min(480px, 94vw);
+  margin: 0 auto;
   transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
@@ -143,13 +145,14 @@ h1, h2, h3, h4, h5, h6 {
     right: auto;
     width: clamp(280px, 40vw, 460px);
     max-width: 48vw;
+    margin: 0;
   }
 }
 
 .recording-controls.controls-hidden {
   opacity: 0;
   pointer-events: none;
-  transform: translateY(20px);
+  transform: translateY(12px);
 }
 
 .recording-controls__secondary {
@@ -160,41 +163,80 @@ h1, h2, h3, h4, h5, h6 {
   width: 100%;
 }
 
+
 .recording-controls__secondary > * {
   min-height: 2.75rem;
 }
 
-@media (max-width: 480px) {
-  .recording-controls__secondary {
-    flex-direction: row;
+@media (max-height: 640px) {
+  .recording-controls {
+    max-width: min(420px, 92vw);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(0.5rem, 3vh, 1.25rem));
   }
 
-  .recording-controls__secondary > * {
-    flex: 1;
+  #startStopButton {
+    font-size: 1rem;
+    padding-block: 0.75rem;
+  }
+
+  #muteButton,
+  #pauseResumeButton {
+    min-height: 2.2rem;
+    font-size: 0.78rem;
   }
 }
 
-  .dual-video-container {
+@media (max-width: 480px) {
+  .recording-controls {
+    max-width: min(440px, 92vw);
+    left: calc(env(safe-area-inset-left, 0px) + clamp(0.5rem, 4vw, 1.5rem));
+    right: calc(env(safe-area-inset-right, 0px) + clamp(0.5rem, 4vw, 1.5rem));
+  }
+
+  #startStopButton {
+    font-size: 1.05rem;
+    padding-block: 0.85rem;
+  }
+
+  .recording-controls__secondary {
     flex-direction: column;
-    transition: flex-direction 0.3s ease;
+    gap: 0.6rem;
   }
 
-  .dual-video-container.dual-landscape {
-    flex-direction: row;
+  .recording-controls__secondary > * {
+    flex: unset;
+    width: 100%;
+    min-height: 2.4rem;
   }
 
-  .dual-video-container .dual-video-panel {
-    display: flex;
-    flex-direction: column;
+  #muteButton,
+  #pauseResumeButton {
+    font-size: 0.8rem;
+    padding-block: 0.55rem;
   }
+}
 
-  .dual-video-container.dual-landscape .dual-video-panel {
-    max-height: 100%;
-  }
+.dual-video-container {
+  flex-direction: column;
+  transition: flex-direction 0.3s ease;
+}
 
-  .dual-video-container.dual-portrait .dual-video-panel {
-    max-height: 50%;
-  }
+.dual-video-container.dual-landscape {
+  flex-direction: row;
+}
+
+.dual-video-container .dual-video-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.dual-video-container.dual-landscape .dual-video-panel {
+  max-height: 100%;
+}
+
+.dual-video-container.dual-portrait .dual-video-panel {
+  max-height: 50%;
+}
 
 @media (min-width: 768px) {
   .recording-controls__secondary {
