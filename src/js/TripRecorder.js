@@ -250,7 +250,11 @@ class TripRecorder {
     const driveType = trip.driveType || 'Long Drive';
     const tripName = `RoadTrip - ${new Date(trip.startedAt).toLocaleString()}`;
 
-    let gpx = `<gpx version="1.1" creator="RoadTrip">
+    let gpx = `<gpx version="1.1" creator="RoadTrip"
+  xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:rt="https://roadtrip.app/ns"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
 `;
     gpx += `  <trk>
 `;
@@ -258,9 +262,9 @@ class TripRecorder {
 `;
     gpx += `    <type>Drive</type>
 `;
-    gpx += `    <extensions>
+  gpx += `    <extensions>
 `;
-    gpx += `      <rt:category xmlns:rt="https://roadtrip.app/ns">${escapeXml(driveType)}</rt:category>
+  gpx += `      <rt:category>${escapeXml(driveType)}</rt:category>
 `;
     gpx += `    </extensions>
 `;

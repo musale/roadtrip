@@ -80,6 +80,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // UI Update Functions
   const updateUI = () => {
+    if (driveTypeSelector) {
+      driveTypeSelector.value = tripRecorder.driveType;
+    }
     currentCaptureSetting.textContent = videoComposer.state.captureMode.charAt(0).toUpperCase() + videoComposer.state.captureMode.slice(1);
     currentFacingSetting.textContent = videoComposer.state.facing.charAt(0).toUpperCase() + videoComposer.state.facing.slice(1);
     currentRecordingModeSetting.textContent = currentMode.charAt(0).toUpperCase() + currentMode.slice(1);
@@ -495,7 +498,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const currentTripData = tripRecorder.getCurrentTrip();
       if (currentTripData && currentTripData.points.length > 0) {
         mapView.fitBoundsToPoints(currentTripData.points);
-      }D
+      }
     }
 
     const finalVideoBlob = await videoComposer.stopRecording();
