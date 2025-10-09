@@ -241,6 +241,62 @@ document.addEventListener('DOMContentLoaded', async () => {
   const handleCameraResult = (result, { silentSuccess = false } = {}) => {
     if (!result) return false;
 
+    const formatErrorValue = (error) => {
+      if (!error) return null;
+      if (typeof error === 'string') return error;
+      if (error instanceof Error) return error.message || error.name || 'Unknown error';
+      if (typeof error === 'object') {
+        return error.message || error.name || JSON.stringify(error);
+      }
+      return String(error);
+    };
+
+    const summarizeAttempts = (attempts) => {
+      if (!attempts || typeof attempts !== 'object') return [];
+      const summaries = [];
+      for (const [key, value] of Object.entries(attempts)) {
+        if (!Array.isArray(value) || value.length === 0) continue;
+        const attemptMessages = value
+          .map(item => formatErrorValue(item?.error))
+          .filter(Boolean);
+        if (attemptMessages.length === 0) continue;
+        summaries.push(`${key} errors: ${attemptMessages.join(' | ')}`);
+      }
+      return summaries;
+    };
+
+    const notifyDualIssue = (issue, variant = 'error') => {
+      if (!issue) return;
+      const code = typeof issue.code === 'string' ? issue.code.toLowerCase() : '';
+      if (code.includes('dual')) {
+        const baseMessage = issue.message ?? 'Dual camera error occurred.';
+        const detailParts = [];
+
+        const details = issue.details ?? {};
+        if (typeof details.deviceCount === 'number') {
+          detailParts.push(`Detected cameras: ${details.deviceCount}`);
+        }
+        if (details.selectedBack) {
+          const label = details.selectedBack.label || details.selectedBack.deviceId;
+          if (label) detailParts.push(`Back: ${label}`);
+        }
+        if (details.selectedFront) {
+          const label = details.selectedFront.label || details.selectedFront.deviceId;
+          if (label) detailParts.push(`Front: ${label}`);
+        }
+
+        detailParts.push(...summarizeAttempts(details.attempts));
+
+        if (details.error) {
+          const errorMsg = formatErrorValue(details.error);
+          if (errorMsg) detailParts.push(`Error: ${errorMsg}`);
+        }
+
+        const detailText = detailParts.length > 0 ? ` (${detailParts.join('; ')})` : '';
+        showNotification(`${baseMessage}${detailText}`, { variant });
+      }
+    };
+
     if (result.capabilities) {
       cameraCapabilities = {
         cameraCount: result.capabilities.cameraCount ?? 0,
@@ -255,6 +311,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       setStartButtonEnabled(false);
       const errorMessage = result.error?.message ?? 'Camera could not be started. Please check permissions and availability.';
       showCameraStatus('Camera unavailable', errorMessage, { variant: 'error' });
+      notifyDualIssue(result.error, 'error');
       return false;
     }
 
@@ -263,6 +320,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (result.warning) {
       showCameraStatus('Using single camera', result.warning.message, { variant: 'warning', autoHideMs: 5000 });
+      notifyDualIssue(result.warning, 'warning');
     } else if (result.metadata?.facingChanged) {
       const facingLabel = result.metadata.actualFacing === 'environment' ? 'environment' : 'user';
       showCameraStatus('Camera adjusted', `Switched to the ${facingLabel} camera that is available on this device.`, { variant: 'warning', autoHideMs: 4000 });
