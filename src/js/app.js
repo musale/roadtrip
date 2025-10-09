@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const hudDistance = document.getElementById('hudDistance');
   const hudTime = document.getElementById('hudTime');
   const startStopButton = document.getElementById('startStopButton');
+  const muteButton = document.getElementById('muteButton'); // Mute button
   const settingsButton = document.getElementById('settingsButton');
   const settingsMenu = document.getElementById('settingsMenu');
 
@@ -99,11 +100,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       startStopButton.innerHTML = '<span class="relative z-10">Stop Trip</span><span class="absolute inset-0 rounded-full animate-glowPulse"></span>';
       liveHud.classList.remove('hidden');
       settingsButton.classList.add('hidden'); // Hide settings during recording
+      muteButton.classList.remove('hidden'); // Show mute button
       settingsMenu.classList.add('hidden'); // Ensure menu is hidden
     } else {
       startStopButton.innerHTML = '<span class="relative z-10">Start Trip</span><span class="absolute inset-0 rounded-full animate-glowPulse"></span>';
       liveHud.classList.add('hidden');
       settingsButton.classList.remove('hidden'); // Show settings when idle
+      muteButton.classList.add('hidden'); // Hide mute button
+      muteButton.textContent = 'Mute'; // Reset mute button text
     }
 
     // Handle map/camera view
@@ -527,6 +531,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       startRecording();
     }
   });
+
+  // Toggles the microphone audio track on the current stream.
+  const toggleMute = () => {
+    if (!videoComposer.audioTrack) return;
+    videoComposer.audioTrack.enabled = !videoComposer.audioTrack.enabled;
+    muteButton.textContent = videoComposer.audioTrack.enabled ? 'Mute' : 'Unmute';
+  };
+
+  muteButton.addEventListener('click', toggleMute);
 
   settingsButton.addEventListener('click', (event) => {
     event.stopPropagation();
