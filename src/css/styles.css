@@ -157,12 +157,11 @@ h1, h2, h3, h4, h5, h6 {
 
 .recording-controls__secondary {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
-  gap: 0.85rem;
+  gap: 0.65rem;
   width: 100%;
 }
-
 
 .recording-controls__secondary > * {
   min-height: 2.75rem;
@@ -199,13 +198,12 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   .recording-controls__secondary {
-    flex-direction: column;
+    flex-direction: row;
     gap: 0.6rem;
   }
 
   .recording-controls__secondary > * {
-    flex: unset;
-    width: 100%;
+    flex: 1;
     min-height: 2.4rem;
   }
 
@@ -236,6 +234,33 @@ h1, h2, h3, h4, h5, h6 {
 
 .dual-video-container.dual-portrait .dual-video-panel {
   max-height: 50%;
+}
+
+#exitFullscreenButton {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+  right: calc(env(safe-area-inset-right, 0px) + 0.75rem);
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--color-text-primary);
+  backdrop-filter: blur(6px);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+#exitFullscreenButton svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+#exitFullscreenButton.visible {
+  display: flex;
+  opacity: 1;
 }
 
 @media (min-width: 768px) {

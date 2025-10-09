@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const recordingControls = document.getElementById('recordingControls');
   const settingsButton = document.getElementById('settingsButton');
   const settingsMenu = document.getElementById('settingsMenu');
+  const exitFullscreenButton = document.getElementById('exitFullscreenButton');
 
   const cameraStatusMessage = document.getElementById('cameraStatusMessage');
   const cameraStatusTitle = document.getElementById('cameraStatusTitle');
@@ -133,6 +134,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     controlsAreHidden = false;
   };
 
+  const setFullscreenUiState = (active) => {
+    if (!exitFullscreenButton) return;
+    exitFullscreenButton.classList.toggle('visible', !!active);
+    exitFullscreenButton.setAttribute('aria-hidden', active ? 'false' : 'true');
+  };
+
   const scheduleControlAutoHide = (restart = false) => {
     if (!recordingControls) return;
     if (!isRecording || isPaused) return;
@@ -230,10 +237,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await request.call(fullscreenTarget);
       recordingFullscreenRequested = true;
+      setFullscreenUiState(true);
       showRecordingControls();
       scheduleControlAutoHide(true);
     } catch (error) {
       recordingFullscreenRequested = false;
+      setFullscreenUiState(false);
       console.warn('Could not enter fullscreen for recording:', error);
     }
   };
@@ -258,6 +267,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.warn('Could not exit fullscreen after recording:', error);
     } finally {
       recordingFullscreenRequested = false;
+      setFullscreenUiState(false);
     }
   };
 
@@ -265,8 +275,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fullscreenActive = !!(document.fullscreenElement || document.webkitFullscreenElement);
     if (!fullscreenActive) {
       recordingFullscreenRequested = false;
+      setFullscreenUiState(false);
+      if (isRecording) {
+        showRecordingControls();
+        scheduleControlAutoHide(true);
+      }
       return;
     }
+    setFullscreenUiState(true);
     if (isRecording) {
       showRecordingControls();
       scheduleControlAutoHide(true);
@@ -1349,6 +1365,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     await requestRecordingFullscreen();
     await preferLandscape();
     updateUI();
+  showRecordingControls();
+  scheduleControlAutoHide(true);
     showNudge();
 
     // Acquire wake lock
@@ -1779,6 +1797,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       pauseRecording();
     }
   });
+
+  if (exitFullscreenButton) {
+    exitFullscreenButton.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      await exitRecordingFullscreen();
+      showRecordingControls();
+      scheduleControlAutoHide(true);
+    });
+  }
 
   settingsButton.addEventListener('click', (event) => {
     event.stopPropagation();
